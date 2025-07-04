@@ -1,4 +1,5 @@
 use anyhow::Result;
+use clap::{Parser, CommandFactory, ColorChoice};
 use ratatui::{
     backend::CrosstermBackend,
     crossterm::{
@@ -16,9 +17,26 @@ use std::{
     path::PathBuf,
 };
 
+#[derive(Parser, Debug)]
+#[command(author, version, about = "View files in a terminal UI")] 
+struct Cli {
+    /// Display file without the interactive UI
+    #[arg(long)]
+    headless: bool,
+
+    /// File to display
+    file: Option<PathBuf>,
+}
+
 fn main() -> Result<()> {
-    let headless = std::env::args().any(|arg| arg == "--headless");
-    let path = std::env::args().nth(1).expect("no file given");
+    let cli = Cli::parse();
+
+    let Some(path) = cli.file.clone() else {
+        Cli::command().color(ColorChoice::Never).print_help()?;
+        println!();
+        return Ok(());
+    };
+    let headless = cli.headless;
     let mut file = File::open(PathBuf::from(path))?;
     let mut content = String::new();
     file.read_to_string(&mut content)?;
