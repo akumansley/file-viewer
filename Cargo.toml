@@ -1,0 +1,12 @@
+[package]
+name = "file-viewer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+ratatui = { version = "0.29.0", features = ["crossterm"] }
+
+[dev-dependencies]
+rexpect = "0.6.2"
+tempfile = "3.20.0"
