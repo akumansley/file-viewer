@@ -341,13 +341,13 @@ fn ui(f: &mut Frame, app: &App) {
     f.render_widget(paragraph, area);
     let cursor_y = area.y + (app.cursor_y as u16).saturating_sub(app.scroll);
     let cursor_x = area.x + app.cursor_x as u16;
-    f.set_cursor(cursor_x, cursor_y);
+    f.set_cursor_position((cursor_x, cursor_y));
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     use ratatui::{backend::TestBackend, Terminal};
-    use insta::assert_display_snapshot;
+    use insta::assert_snapshot;
 
     #[test]
     fn initial_ui_snapshot() {
@@ -356,7 +356,7 @@ mod tests {
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| ui(f, &app)).unwrap();
-        assert_display_snapshot!(terminal.backend());
+        assert_snapshot!(terminal.backend());
     }
 }
 
