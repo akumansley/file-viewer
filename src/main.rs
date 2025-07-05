@@ -42,10 +42,7 @@ fn highlight_line<'a>(
                     }
                 }
 
-                spans.push(Span::styled(
-                    &line[start + pos..start + pos + q.len()],
-                    Style::default().bg(Color::Yellow),
-                ));
+                // search results are highlighted via styles; spans are built later
 
                 start += pos + q.len();
             }
@@ -562,10 +559,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
         if let Event::Key(key) = event::read()? {
             let height = terminal.size()?.height.saturating_sub(1);
 
-
             let mut mode = mem::replace(&mut app.mode, Mode::Normal);
             let quit = match &mut mode {
                 Mode::Normal => keymaps::normal::handle(&mut app, key, height, &mut pending_g),
+                Mode::Visual => keymaps::visual::handle(&mut app, key, height),
                 Mode::Command(cmd) => keymaps::command::handle(&mut app, cmd, key, height),
                 Mode::Search(query) => keymaps::search::handle(&mut app, query, key, height),
             };
@@ -573,7 +570,6 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
 
             if quit {
                 return Ok(());
-
             }
         }
     }
