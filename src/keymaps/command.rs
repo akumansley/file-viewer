@@ -8,12 +8,15 @@ pub fn handle(app: &mut App, cmd: &mut String, key: KeyEvent, _height: u16) -> b
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.mode = Mode::Normal;
         }
-        KeyCode::Enter => {
-            if cmd.trim() == "q" {
-                return true;
+        KeyCode::Enter => match cmd.trim() {
+            "q" => return true,
+            "help" => {
+                app.mode = Mode::Help;
             }
-            app.mode = Mode::Normal;
-        }
+            _ => {
+                app.mode = Mode::Normal;
+            }
+        },
         KeyCode::Backspace => {
             cmd.pop();
         }
