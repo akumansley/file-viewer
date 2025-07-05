@@ -346,7 +346,25 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
             let height = terminal.size()?.height;
 
             match &mut app.mode {
-                Mode::Normal => match key.code {
+                Mode::Normal => {
+                    if key.code != KeyCode::Char('g') {
+                        pending_g = false;
+                    }
+                    match key.code {
+                    KeyCode::Char('g') => {
+                        if pending_g {
+                            app.goto_first_line();
+                            app.ensure_visible(height);
+                            pending_g = false;
+                        } else {
+                            pending_g = true;
+                        }
+                    }
+                    KeyCode::Char('G') => {
+                        app.goto_last_line();
+                        app.ensure_visible(height);
+                        pending_g = false;
+                    }
                     KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
                     KeyCode::Char('q') => return Ok(()),
                     KeyCode::Char('h') => app.move_left(),
@@ -387,8 +405,11 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
                         app.cursor_bottom(height);
                         app.ensure_visible(height);
                     }
-                    _ => {}
-                },
+                    _ => {
+                        pending_g = false;
+                    }
+                }
+            },
                 Mode::Command(cmd) => match key.code {
                     KeyCode::Esc => app.mode = Mode::Normal,
                     KeyCode::Enter => {
