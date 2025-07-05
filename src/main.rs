@@ -23,32 +23,82 @@ fn is_keyword(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
-fn highlight_line<'a>(line: &'a str, query: Option<&str>) -> Line<'a> {
+fn highlight_line<'a>(
+    line: &'a str,
+    line_idx: usize,
+    query: Option<&str>,
+    selection: Option<((usize, usize), (usize, usize))>,
+) -> Line<'a> {
+    let bytes = line.as_bytes();
+    let mut styles = vec![Style::default(); bytes.len()];
+
     if let Some(q) = query {
         if !q.is_empty() {
-            let mut spans = Vec::new();
             let mut start = 0;
             while let Some(pos) = line[start..].find(q) {
-                if pos > 0 {
-                    spans.push(Span::raw(&line[start..start + pos]));
+                for i in start + pos..start + pos + q.len() {
+                    if i < styles.len() {
+                        styles[i] = styles[i].bg(Color::Yellow);
+                    }
                 }
+
                 spans.push(Span::styled(
                     &line[start + pos..start + pos + q.len()],
                     Style::default().bg(Color::Yellow),
                 ));
+
                 start += pos + q.len();
             }
-            if start < line.len() {
-                spans.push(Span::raw(&line[start..]));
-            }
-            return Line::from(spans);
         }
     }
-    Line::from(line.to_owned())
+
+    if let Some((start, end)) = selection {
+        let ((sy, sx), (ey, ex)) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        if line_idx >= sy && line_idx <= ey {
+            let sel_start = if line_idx == sy {
+                sx.min(bytes.len())
+            } else {
+                0
+            };
+            let sel_end = if line_idx == ey {
+                ex.min(bytes.len())
+            } else {
+                bytes.len()
+            };
+            for i in sel_start..sel_end {
+                if i < styles.len() {
+                    styles[i] = styles[i].add_modifier(Modifier::REVERSED);
+                }
+            }
+        }
+    }
+
+    if styles.is_empty() {
+        return Line::from(line.to_owned());
+    }
+
+    let mut spans = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let mut j = i + 1;
+        while j < bytes.len() && styles[j] == styles[i] {
+            j += 1;
+        }
+        let text = &line[i..j];
+        spans.push(Span::styled(text.to_string(), styles[i]));
+        i = j;
+    }
+
+    Line::from(spans)
 }
 
 enum Mode {
     Normal,
+    Visual,
     Command(String),
     Search(String),
 }
@@ -116,6 +166,7 @@ struct App {
     search_query: Option<String>,
     search_hits: Vec<(usize, usize)>,
     current_hit: Option<usize>,
+    selection_start: Option<(usize, usize)>,
 }
 
 impl App {
@@ -130,6 +181,7 @@ impl App {
             search_query: None,
             search_hits: Vec::new(),
             current_hit: None,
+            selection_start: None,
         }
     }
 
@@ -510,6 +562,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
         if let Event::Key(key) = event::read()? {
             let height = terminal.size()?.height.saturating_sub(1);
 
+
             let mut mode = mem::replace(&mut app.mode, Mode::Normal);
             let quit = match &mut mode {
                 Mode::Normal => keymaps::normal::handle(&mut app, key, height, &mut pending_g),
@@ -520,6 +573,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
 
             if quit {
                 return Ok(());
+
             }
         }
     }
@@ -534,10 +588,14 @@ fn ui(f: &mut Frame, app: &App) {
         width: area.width,
         height: main_height,
     };
+    let selection = app
+        .selection_start
+        .map(|s| (s, (app.cursor_y, app.cursor_x)));
     let lines: Vec<Line> = app
         .display_lines()
         .iter()
-        .map(|l| highlight_line(l.text(), app.search_query.as_deref()))
+        .enumerate()
+        .map(|(i, l)| highlight_line(l.text(), i, app.search_query.as_deref(), selection))
         .collect();
     let text = Text::from(lines);
     let paragraph = Paragraph::new(text)
