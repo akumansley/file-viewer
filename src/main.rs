@@ -4,13 +4,15 @@ use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     crossterm::{
-        event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+        event::{self, DisableMouseCapture, EnableMouseCapture, Event},
         execute,
         terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
     },
     prelude::*,
     widgets::{Paragraph, Wrap},
 };
+mod keymaps;
+use std::mem;
 use std::{
     fs::File,
     io::{self, Read},
@@ -39,6 +41,12 @@ fn highlight_line<'a>(
                         styles[i] = styles[i].bg(Color::Yellow);
                     }
                 }
+
+                spans.push(Span::styled(
+                    &line[start + pos..start + pos + q.len()],
+                    Style::default().bg(Color::Yellow),
+                ));
+
                 start += pos + q.len();
             }
         }
@@ -554,173 +562,18 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
         if let Event::Key(key) = event::read()? {
             let height = terminal.size()?.height.saturating_sub(1);
 
-            match &mut app.mode {
-                Mode::Normal => {
-                    if key.code != KeyCode::Char('g') {
-                        pending_g = false;
-                    }
-                    match key.code {
-                        KeyCode::Char('v') => {
-                            app.mode = Mode::Visual;
-                            app.selection_start = Some((app.cursor_y, app.cursor_x));
-                            pending_g = false;
-                        }
-                        KeyCode::Char('g') => {
-                            if pending_g {
-                                app.goto_first_line();
-                                app.ensure_visible(height);
-                                pending_g = false;
-                            } else {
-                                pending_g = true;
-                            }
-                        }
-                        KeyCode::Char('G') => {
-                            app.goto_last_line();
-                            app.ensure_visible(height);
-                            pending_g = false;
-                        }
-                        KeyCode::Char('/') => {
-                            app.mode = Mode::Search(String::new());
-                            pending_g = false;
-                        }
-                        KeyCode::Char('n') => app.next_hit(height),
-                        KeyCode::Char('p') => app.prev_hit(height),
-                        KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
-                        KeyCode::Char('q') => return Ok(()),
-                        KeyCode::Char('h') => app.move_left(),
-                        KeyCode::Char('j') => app.move_down(height),
-                        KeyCode::Char('k') => app.move_up(),
-                        KeyCode::Char('l') => app.move_right(),
-                        KeyCode::Char('w') => {
-                            app.move_word_forward();
-                            app.ensure_visible(height);
-                        }
-                        KeyCode::Char('b') => {
-                            app.move_word_backward();
-                            app.ensure_visible(height);
-                        }
-                        KeyCode::Char('{') => {
-                            app.move_paragraph_up();
-                            app.ensure_visible(height);
-                        }
-                        KeyCode::Char('}') => {
-                            app.move_paragraph_down();
-                            app.ensure_visible(height);
-                        }
-                        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            app.half_page_up(height);
-                        }
-                        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            app.half_page_down(height);
-                        }
-                        KeyCode::Char('H') => {
-                            app.cursor_top();
-                            app.ensure_visible(height);
-                        }
-                        KeyCode::Char('M') => {
-                            app.cursor_middle(height);
-                            app.ensure_visible(height);
-                        }
-                        KeyCode::Char('L') => {
-                            app.cursor_bottom(height);
-                            app.ensure_visible(height);
-                        }
-                        _ => {
-                            pending_g = false;
-                        }
-                    }
-                }
-                Mode::Visual => match key.code {
-                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        app.mode = Mode::Normal;
-                        app.selection_start = None;
-                    }
 
+            let mut mode = mem::replace(&mut app.mode, Mode::Normal);
+            let quit = match &mut mode {
+                Mode::Normal => keymaps::normal::handle(&mut app, key, height, &mut pending_g),
+                Mode::Command(cmd) => keymaps::command::handle(&mut app, cmd, key, height),
+                Mode::Search(query) => keymaps::search::handle(&mut app, query, key, height),
+            };
+            app.mode = mode;
 
-                    KeyCode::Char('n') => app.next_hit(height),
-                    KeyCode::Char('N') => app.prev_hit(height),
-                    KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
+            if quit {
+                return Ok(());
 
-                    KeyCode::Char('q') => return Ok(()),
-                    KeyCode::Char('h') => app.move_left(),
-                    KeyCode::Char('j') => app.move_down(height),
-                    KeyCode::Char('k') => app.move_up(),
-                    KeyCode::Char('l') => app.move_right(),
-                    KeyCode::Char('w') => {
-                        app.move_word_forward();
-                        app.ensure_visible(height);
-                    }
-                    KeyCode::Char('b') => {
-                        app.move_word_backward();
-                        app.ensure_visible(height);
-                    }
-                    KeyCode::Char('{') => {
-                        app.move_paragraph_up();
-                        app.ensure_visible(height);
-                    }
-                    KeyCode::Char('}') => {
-                        app.move_paragraph_down();
-                        app.ensure_visible(height);
-                    }
-                    KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        app.half_page_up(height);
-                    }
-                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        app.half_page_down(height);
-                    }
-                    KeyCode::Char('H') => {
-                        app.cursor_top();
-                        app.ensure_visible(height);
-                    }
-                    KeyCode::Char('M') => {
-                        app.cursor_middle(height);
-                        app.ensure_visible(height);
-                    }
-                    KeyCode::Char('L') => {
-                        app.cursor_bottom(height);
-                        app.ensure_visible(height);
-                    }
-                    _ => {}
-                },
-                Mode::Command(cmd) => match key.code {
-                    KeyCode::Esc => app.mode = Mode::Normal,
-                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        app.mode = Mode::Normal;
-                    }
-                    KeyCode::Enter => {
-                        if cmd.trim() == "q" {
-                            return Ok(());
-                        }
-                        app.mode = Mode::Normal;
-                    }
-                    KeyCode::Backspace => {
-                        cmd.pop();
-                    }
-                    KeyCode::Char(c) => {
-                        cmd.push(c);
-                    }
-                    _ => {}
-                },
-                Mode::Search(query) => match key.code {
-                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        app.clear_search();
-                        app.mode = Mode::Normal;
-                    }
-                    KeyCode::Esc => app.mode = Mode::Normal,
-                    KeyCode::Enter => {
-                        let q = query.clone();
-                        app.set_search_query(q);
-                        app.mode = Mode::Normal;
-                        app.ensure_visible(height);
-                    }
-                    KeyCode::Backspace => {
-                        query.pop();
-                    }
-                    KeyCode::Char(c) => {
-                        query.push(c);
-                    }
-                    _ => {}
-                },
             }
         }
     }
