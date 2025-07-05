@@ -343,7 +343,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
         terminal.draw(|f| ui(f, &app))?;
 
         if let Event::Key(key) = event::read()? {
-            let height = terminal.size()?.height;
+            let height = terminal.size()?.height.saturating_sub(1);
 
             match &mut app.mode {
                 Mode::Normal => {
@@ -494,7 +494,7 @@ mod tests {
         let mut app = App::new(content);
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
-        let height = terminal.size().unwrap().height;
+        let height = terminal.size().unwrap().height.saturating_sub(1);
 
         // Scroll down using Ctrl-D three times to move the viewport
         for _ in 0..3 {
