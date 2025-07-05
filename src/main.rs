@@ -391,6 +391,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
                 },
                 Mode::Command(cmd) => match key.code {
                     KeyCode::Esc => app.mode = Mode::Normal,
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.mode = Mode::Normal;
+                    }
                     KeyCode::Enter => {
                         if cmd.trim() == "q" {
                             return Ok(());
@@ -405,7 +408,6 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
                     }
                     _ => {}
                 },
-
             }
         }
     }
@@ -413,25 +415,39 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
 
 fn ui(f: &mut Frame, app: &App) {
     let area = f.area();
+    let main_height = area.height.saturating_sub(1);
+    let main_area = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: main_height,
+    };
     let paragraph = Paragraph::new(app.content())
         .wrap(Wrap { trim: true })
         .scroll((app.scroll, 0));
-    f.render_widget(paragraph, area);
-    let cursor_y = area.y + (app.cursor_y as u16).saturating_sub(app.scroll);
-    let cursor_x = area.x + app.cursor_x as u16;
+    f.render_widget(paragraph, main_area);
+    let cursor_y = main_area.y + (app.cursor_y as u16).saturating_sub(app.scroll);
+    let cursor_x = main_area.x + app.cursor_x as u16;
     f.set_cursor_position((cursor_x, cursor_y));
 
-    if let Mode::Command(cmd) = &app.mode {
-        let cmd_area = Rect {
-            x: area.x,
-            y: area.y + area.height.saturating_sub(1),
-            width: area.width,
-            height: 1,
-        };
-        let text = format!(":{}", cmd);
-        let paragraph = Paragraph::new(text);
-        f.render_widget(paragraph, cmd_area);
-        f.set_cursor_position((cmd_area.x + 1 + cmd.len() as u16, cmd_area.y));
+    let cmd_area = Rect {
+        x: area.x,
+        y: area.y + main_height,
+        width: area.width,
+        height: 1,
+    };
+
+    match &app.mode {
+        Mode::Command(cmd) => {
+            let text = format!(":{}", cmd);
+            let paragraph = Paragraph::new(text);
+            f.render_widget(paragraph, cmd_area);
+            f.set_cursor_position((cmd_area.x + 1 + cmd.len() as u16, cmd_area.y));
+        }
+        _ => {
+            let blank = Paragraph::new("");
+            f.render_widget(blank, cmd_area);
+        }
     }
 }
 #[cfg(test)]
@@ -453,9 +469,7 @@ mod tests {
     #[test]
     fn scrolling_ctrl_d_and_ctrl_u() {
         // Build content with many lines so we can scroll
-        let content: String = (1..=20)
-            .map(|i| format!("line {i}\n"))
-            .collect();
+        let content: String = (1..=20).map(|i| format!("line {i}\n")).collect();
         let mut app = App::new(content);
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
