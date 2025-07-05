@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.98"
 ratatui = { version = "0.29.0", features = ["crossterm"] }
+clap = "4.5.40"
 
 [dev-dependencies]
 insta = "1.43.1"
