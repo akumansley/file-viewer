@@ -21,9 +21,31 @@ fn is_keyword(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
+fn highlight_line<'a>(line: &'a str, query: Option<&str>) -> Line<'a> {
+    if let Some(q) = query {
+        if !q.is_empty() {
+            let mut spans = Vec::new();
+            let mut start = 0;
+            while let Some(pos) = line[start..].find(q) {
+                if pos > 0 {
+                    spans.push(Span::raw(&line[start..start + pos]));
+                }
+                spans.push(Span::styled(&line[start + pos..start + pos + q.len()], Style::default().bg(Color::Yellow)));
+                start += pos + q.len();
+            }
+            if start < line.len() {
+                spans.push(Span::raw(&line[start..]));
+            }
+            return Line::from(spans);
+        }
+    }
+    Line::from(line.to_owned())
+}
+
 enum Mode {
     Normal,
     Command(String),
+    Search(String),
 }
 
 struct App {
@@ -32,6 +54,9 @@ struct App {
     cursor_y: usize,
     scroll: u16,
     mode: Mode,
+    search_query: Option<String>,
+    search_hits: Vec<(usize, usize)>,
+    current_hit: Option<usize>,
 }
 
 impl App {
@@ -43,6 +68,9 @@ impl App {
             cursor_y: 0,
             scroll: 0,
             mode: Mode::Normal,
+            search_query: None,
+            search_hits: Vec::new(),
+            current_hit: None,
         }
     }
 
@@ -288,6 +316,66 @@ impl App {
             self.cursor_x = 0;
         }
     }
+
+    fn set_search_query(&mut self, query: String) {
+        if query.is_empty() {
+            self.search_query = None;
+            self.search_hits.clear();
+            self.current_hit = None;
+            return;
+        }
+        self.search_query = Some(query.clone());
+        self.search_hits.clear();
+        for (y, line) in self.lines.iter().enumerate() {
+            let mut start = 0;
+            while let Some(pos) = line[start..].find(&query) {
+                self.search_hits.push((y, start + pos));
+                start += pos + query.len();
+            }
+        }
+        self.current_hit = if self.search_hits.is_empty() { None } else { Some(0) };
+        if let Some(idx) = self.current_hit {
+            let (y, x) = self.search_hits[idx];
+            self.cursor_y = y;
+            self.cursor_x = x;
+        }
+    }
+
+    fn clear_search(&mut self) {
+        self.search_query = None;
+        self.search_hits.clear();
+        self.current_hit = None;
+    }
+
+    fn next_hit(&mut self, height: u16) {
+        if self.search_hits.is_empty() {
+            return;
+        }
+        let next = match self.current_hit {
+            Some(i) => (i + 1) % self.search_hits.len(),
+            None => 0,
+        };
+        self.current_hit = Some(next);
+        let (y, x) = self.search_hits[next];
+        self.cursor_y = y;
+        self.cursor_x = x;
+        self.ensure_visible(height);
+    }
+
+    fn prev_hit(&mut self, height: u16) {
+        if self.search_hits.is_empty() {
+            return;
+        }
+        let prev = match self.current_hit {
+            Some(0) | None => self.search_hits.len() - 1,
+            Some(i) => i - 1,
+        };
+        self.current_hit = Some(prev);
+        let (y, x) = self.search_hits[prev];
+        self.cursor_y = y;
+        self.cursor_x = x;
+        self.ensure_visible(height);
+    }
 }
 
 #[derive(Parser)]
@@ -365,6 +453,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
                         app.ensure_visible(height);
                         pending_g = false;
                     }
+                    KeyCode::Char('/') => {
+                        app.mode = Mode::Search(String::new());
+                        pending_g = false;
+                    }
+                    KeyCode::Char('n') => app.next_hit(height),
+                    KeyCode::Char('p') => app.prev_hit(height),
                     KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
                     KeyCode::Char('q') => return Ok(()),
                     KeyCode::Char('h') => app.move_left(),
@@ -429,6 +523,26 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
                     }
                     _ => {}
                 },
+                Mode::Search(query) => match key.code {
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.clear_search();
+                        app.mode = Mode::Normal;
+                    }
+                    KeyCode::Esc => app.mode = Mode::Normal,
+                    KeyCode::Enter => {
+                        let q = query.clone();
+                        app.set_search_query(q);
+                        app.mode = Mode::Normal;
+                        app.ensure_visible(height);
+                    }
+                    KeyCode::Backspace => {
+                        query.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        query.push(c);
+                    }
+                    _ => {}
+                },
             }
         }
     }
@@ -443,7 +557,13 @@ fn ui(f: &mut Frame, app: &App) {
         width: area.width,
         height: main_height,
     };
-    let paragraph = Paragraph::new(app.content())
+    let lines: Vec<Line> = app
+        .lines
+        .iter()
+        .map(|l| highlight_line(l, app.search_query.as_deref()))
+        .collect();
+    let text = Text::from(lines);
+    let paragraph = Paragraph::new(text)
         .wrap(Wrap { trim: true })
         .scroll((app.scroll, 0));
     f.render_widget(paragraph, main_area);
@@ -464,6 +584,12 @@ fn ui(f: &mut Frame, app: &App) {
             let paragraph = Paragraph::new(text);
             f.render_widget(paragraph, cmd_area);
             f.set_cursor_position((cmd_area.x + 1 + cmd.len() as u16, cmd_area.y));
+        }
+        Mode::Search(query) => {
+            let text = format!("/{}", query);
+            let paragraph = Paragraph::new(text);
+            f.render_widget(paragraph, cmd_area);
+            f.set_cursor_position((cmd_area.x + 1 + query.len() as u16, cmd_area.y));
         }
         _ => {
             let blank = Paragraph::new("");
