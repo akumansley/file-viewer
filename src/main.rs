@@ -21,29 +21,76 @@ fn is_keyword(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
-fn highlight_line<'a>(line: &'a str, query: Option<&str>) -> Line<'a> {
+fn highlight_line<'a>(
+    line: &'a str,
+    line_idx: usize,
+    query: Option<&str>,
+    selection: Option<((usize, usize), (usize, usize))>,
+) -> Line<'a> {
+    let bytes = line.as_bytes();
+    let mut styles = vec![Style::default(); bytes.len()];
+
     if let Some(q) = query {
         if !q.is_empty() {
-            let mut spans = Vec::new();
             let mut start = 0;
             while let Some(pos) = line[start..].find(q) {
-                if pos > 0 {
-                    spans.push(Span::raw(&line[start..start + pos]));
+                for i in start + pos..start + pos + q.len() {
+                    if i < styles.len() {
+                        styles[i] = styles[i].bg(Color::Yellow);
+                    }
                 }
-                spans.push(Span::styled(&line[start + pos..start + pos + q.len()], Style::default().bg(Color::Yellow)));
                 start += pos + q.len();
             }
-            if start < line.len() {
-                spans.push(Span::raw(&line[start..]));
-            }
-            return Line::from(spans);
         }
     }
-    Line::from(line.to_owned())
+
+    if let Some((start, end)) = selection {
+        let ((sy, sx), (ey, ex)) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        if line_idx >= sy && line_idx <= ey {
+            let sel_start = if line_idx == sy {
+                sx.min(bytes.len())
+            } else {
+                0
+            };
+            let sel_end = if line_idx == ey {
+                ex.min(bytes.len())
+            } else {
+                bytes.len()
+            };
+            for i in sel_start..sel_end {
+                if i < styles.len() {
+                    styles[i] = styles[i].add_modifier(Modifier::REVERSED);
+                }
+            }
+        }
+    }
+
+    if styles.is_empty() {
+        return Line::from(line.to_owned());
+    }
+
+    let mut spans = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let mut j = i + 1;
+        while j < bytes.len() && styles[j] == styles[i] {
+            j += 1;
+        }
+        let text = &line[i..j];
+        spans.push(Span::styled(text.to_string(), styles[i]));
+        i = j;
+    }
+
+    Line::from(spans)
 }
 
 enum Mode {
     Normal,
+    Visual,
     Command(String),
     Search(String),
 }
@@ -57,7 +104,6 @@ impl Document {
         let lines = content.lines().map(|s| s.to_string()).collect();
         Self { lines }
     }
-
 }
 
 struct OverlayItem {
@@ -112,6 +158,7 @@ struct App {
     search_query: Option<String>,
     search_hits: Vec<(usize, usize)>,
     current_hit: Option<usize>,
+    selection_start: Option<(usize, usize)>,
 }
 
 impl App {
@@ -126,6 +173,7 @@ impl App {
             search_query: None,
             search_hits: Vec::new(),
             current_hit: None,
+            selection_start: None,
         }
     }
 
@@ -402,7 +450,11 @@ impl App {
                 start += pos + query.len();
             }
         }
-        self.current_hit = if self.search_hits.is_empty() { None } else { Some(0) };
+        self.current_hit = if self.search_hits.is_empty() {
+            None
+        } else {
+            Some(0)
+        };
         if let Some(idx) = self.current_hit {
             let (y, x) = self.search_hits[idx];
             self.cursor_y = y;
@@ -508,27 +560,81 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
                         pending_g = false;
                     }
                     match key.code {
-                    KeyCode::Char('g') => {
-                        if pending_g {
-                            app.goto_first_line();
+                        KeyCode::Char('v') => {
+                            app.mode = Mode::Visual;
+                            app.selection_start = Some((app.cursor_y, app.cursor_x));
+                            pending_g = false;
+                        }
+                        KeyCode::Char('g') => {
+                            if pending_g {
+                                app.goto_first_line();
+                                app.ensure_visible(height);
+                                pending_g = false;
+                            } else {
+                                pending_g = true;
+                            }
+                        }
+                        KeyCode::Char('G') => {
+                            app.goto_last_line();
                             app.ensure_visible(height);
                             pending_g = false;
-                        } else {
-                            pending_g = true;
+                        }
+                        KeyCode::Char('/') => {
+                            app.mode = Mode::Search(String::new());
+                            pending_g = false;
+                        }
+                        KeyCode::Char('n') => app.next_hit(height),
+                        KeyCode::Char('p') => app.prev_hit(height),
+                        KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
+                        KeyCode::Char('q') => return Ok(()),
+                        KeyCode::Char('h') => app.move_left(),
+                        KeyCode::Char('j') => app.move_down(height),
+                        KeyCode::Char('k') => app.move_up(),
+                        KeyCode::Char('l') => app.move_right(),
+                        KeyCode::Char('w') => {
+                            app.move_word_forward();
+                            app.ensure_visible(height);
+                        }
+                        KeyCode::Char('b') => {
+                            app.move_word_backward();
+                            app.ensure_visible(height);
+                        }
+                        KeyCode::Char('{') => {
+                            app.move_paragraph_up();
+                            app.ensure_visible(height);
+                        }
+                        KeyCode::Char('}') => {
+                            app.move_paragraph_down();
+                            app.ensure_visible(height);
+                        }
+                        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            app.half_page_up(height);
+                        }
+                        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            app.half_page_down(height);
+                        }
+                        KeyCode::Char('H') => {
+                            app.cursor_top();
+                            app.ensure_visible(height);
+                        }
+                        KeyCode::Char('M') => {
+                            app.cursor_middle(height);
+                            app.ensure_visible(height);
+                        }
+                        KeyCode::Char('L') => {
+                            app.cursor_bottom(height);
+                            app.ensure_visible(height);
+                        }
+                        _ => {
+                            pending_g = false;
                         }
                     }
-                    KeyCode::Char('G') => {
-                        app.goto_last_line();
-                        app.ensure_visible(height);
-                        pending_g = false;
+                }
+                Mode::Visual => match key.code {
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.mode = Mode::Normal;
+                        app.selection_start = None;
                     }
-                    KeyCode::Char('/') => {
-                        app.mode = Mode::Search(String::new());
-                        pending_g = false;
-                    }
-                    KeyCode::Char('n') => app.next_hit(height),
-                    KeyCode::Char('p') => app.prev_hit(height),
-                    KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
                     KeyCode::Char('q') => return Ok(()),
                     KeyCode::Char('h') => app.move_left(),
                     KeyCode::Char('j') => app.move_down(height),
@@ -568,11 +674,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
                         app.cursor_bottom(height);
                         app.ensure_visible(height);
                     }
-                    _ => {
-                        pending_g = false;
-                    }
-                }
-            },
+                    _ => {}
+                },
                 Mode::Command(cmd) => match key.code {
                     KeyCode::Esc => app.mode = Mode::Normal,
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -626,10 +729,14 @@ fn ui(f: &mut Frame, app: &App) {
         width: area.width,
         height: main_height,
     };
+    let selection = app
+        .selection_start
+        .map(|s| (s, (app.cursor_y, app.cursor_x)));
     let lines: Vec<Line> = app
         .display_lines()
         .iter()
-        .map(|l| highlight_line(l.text(), app.search_query.as_deref()))
+        .enumerate()
+        .map(|(i, l)| highlight_line(l.text(), i, app.search_query.as_deref(), selection))
         .collect();
     let text = Text::from(lines);
     let paragraph = Paragraph::new(text)
