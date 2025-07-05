@@ -276,6 +276,18 @@ impl App {
             self.cursor_x = len;
         }
     }
+
+    fn goto_first_line(&mut self) {
+        self.cursor_y = 0;
+        self.cursor_x = 0;
+    }
+
+    fn goto_last_line(&mut self) {
+        if !self.lines.is_empty() {
+            self.cursor_y = self.lines.len() - 1;
+            self.cursor_x = 0;
+        }
+    }
 }
 
 #[derive(Parser)]
@@ -326,11 +338,13 @@ fn main() -> Result<()> {
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Result<()> {
     let mut app = App::new(content);
+    let mut pending_g = false;
     loop {
         terminal.draw(|f| ui(f, &app))?;
 
         if let Event::Key(key) = event::read()? {
             let height = terminal.size()?.height;
+
             match &mut app.mode {
                 Mode::Normal => match key.code {
                     KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
@@ -391,6 +405,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
                     }
                     _ => {}
                 },
+
             }
         }
     }
