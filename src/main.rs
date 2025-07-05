@@ -635,6 +635,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
                         app.mode = Mode::Normal;
                         app.selection_start = None;
                     }
+
+
+                    KeyCode::Char('n') => app.next_hit(height),
+                    KeyCode::Char('N') => app.prev_hit(height),
+                    KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
+
                     KeyCode::Char('q') => return Ok(()),
                     KeyCode::Char('h') => app.move_left(),
                     KeyCode::Char('j') => app.move_down(height),
