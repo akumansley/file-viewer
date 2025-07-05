@@ -92,12 +92,15 @@ fn highlight_line<'a>(
     Line::from(spans)
 }
 
+const HELP_TEXT: &str = "File Viewer Help\n\n?     Show this help\n:help Open help screen\nq     Quit\nEsc   Close help";
+
 enum Mode {
     Normal,
     Visual,
     VisualLine,
     Command(String),
     Search(String),
+    Help,
 }
 
 struct Document {
@@ -565,6 +568,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
                 Mode::Visual | Mode::VisualLine => keymaps::visual::handle(&mut app, key, height),
                 Mode::Command(cmd) => keymaps::command::handle(&mut app, cmd, key, height),
                 Mode::Search(query) => keymaps::search::handle(&mut app, query, key, height),
+                Mode::Help => keymaps::help::handle(&mut app, key, height),
             };
             app.mode = mode;
 
@@ -577,6 +581,11 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
 
 fn ui(f: &mut Frame, app: &App) {
     let area = f.area();
+    if matches!(app.mode, Mode::Help) {
+        let paragraph = Paragraph::new(HELP_TEXT).wrap(Wrap { trim: true });
+        f.render_widget(paragraph, area);
+        return;
+    }
     let main_height = area.height.saturating_sub(1);
     let main_area = Rect {
         x: area.x,
@@ -667,5 +676,16 @@ mod tests {
         }
         terminal.draw(|f| ui(f, &app)).unwrap();
         assert_snapshot!("after_ctrl_u", terminal.backend());
+    }
+
+    #[test]
+    fn help_screen_renders() {
+        let content = "hello".to_string();
+        let mut app = App::new(content);
+        app.mode = Mode::Help;
+        let backend = TestBackend::new(20, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| ui(f, &app)).unwrap();
+        assert_snapshot!("help_screen", terminal.backend());
     }
 }

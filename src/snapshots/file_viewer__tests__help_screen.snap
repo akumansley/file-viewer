@@ -1,0 +1,10 @@
+---
+source: src/main.rs
+assertion_line: 688
+expression: terminal.backend()
+---
+"File Viewer Help    "
+"                    "
+"?     Show this help"
+":help Open help     "
+"screen              "

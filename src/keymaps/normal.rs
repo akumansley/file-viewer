@@ -26,6 +26,10 @@ pub fn handle(app: &mut App, key: KeyEvent, height: u16, pending_g: &mut bool) -
                 *pending_g = true;
             }
         }
+        KeyCode::Char('?') => {
+            app.mode = Mode::Help;
+            *pending_g = false;
+        }
         KeyCode::Char('G') => {
             app.goto_last_line();
             app.ensure_visible(height);
