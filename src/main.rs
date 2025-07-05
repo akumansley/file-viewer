@@ -171,7 +171,7 @@ impl App {
             if c.is_ascii_whitespace() {
                 self.skip_forward(&mut y, &mut x, |b| b.is_ascii_whitespace());
             } else if is_keyword(c) {
-                self.skip_forward(&mut y, &mut x, |b| is_keyword(b));
+                self.skip_forward(&mut y, &mut x, is_keyword);
             } else {
                 self.skip_forward(&mut y, &mut x, |b| {
                     !is_keyword(b) && !b.is_ascii_whitespace()
@@ -197,7 +197,7 @@ impl App {
 
         if let Some(c) = self.char_before(y, x) {
             if is_keyword(c) {
-                self.skip_backward(&mut y, &mut x, |b| is_keyword(b));
+                self.skip_backward(&mut y, &mut x, is_keyword);
             } else {
                 self.skip_backward(&mut y, &mut x, |b| {
                     !is_keyword(b) && !b.is_ascii_whitespace()
