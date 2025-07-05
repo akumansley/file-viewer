@@ -28,6 +28,7 @@ fn highlight_line<'a>(
     line_idx: usize,
     query: Option<&str>,
     selection: Option<((usize, usize), (usize, usize))>,
+    line_mode: bool,
 ) -> Line<'a> {
     let bytes = line.as_bytes();
     let mut styles = vec![Style::default(); bytes.len()];
@@ -56,19 +57,17 @@ fn highlight_line<'a>(
             (end, start)
         };
         if line_idx >= sy && line_idx <= ey {
-            let sel_start = if line_idx == sy {
-                sx.min(bytes.len())
+            if line_mode {
+                for style in &mut styles {
+                    *style = style.add_modifier(Modifier::REVERSED);
+                }
             } else {
-                0
-            };
-            let sel_end = if line_idx == ey {
-                ex.min(bytes.len())
-            } else {
-                bytes.len()
-            };
-            for i in sel_start..sel_end {
-                if i < styles.len() {
-                    styles[i] = styles[i].add_modifier(Modifier::REVERSED);
+                let sel_start = if line_idx == sy { sx.min(bytes.len()) } else { 0 };
+                let sel_end = if line_idx == ey { ex.min(bytes.len()) } else { bytes.len() };
+                for i in sel_start..sel_end {
+                    if i < styles.len() {
+                        styles[i] = styles[i].add_modifier(Modifier::REVERSED);
+                    }
                 }
             }
         }
@@ -96,6 +95,7 @@ fn highlight_line<'a>(
 enum Mode {
     Normal,
     Visual,
+    VisualLine,
     Command(String),
     Search(String),
 }
@@ -562,7 +562,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
             let mut mode = mem::replace(&mut app.mode, Mode::Normal);
             let quit = match &mut mode {
                 Mode::Normal => keymaps::normal::handle(&mut app, key, height, &mut pending_g),
-                Mode::Visual => keymaps::visual::handle(&mut app, key, height),
+                Mode::Visual | Mode::VisualLine => keymaps::visual::handle(&mut app, key, height),
                 Mode::Command(cmd) => keymaps::command::handle(&mut app, cmd, key, height),
                 Mode::Search(query) => keymaps::search::handle(&mut app, query, key, height),
             };
@@ -587,11 +587,12 @@ fn ui(f: &mut Frame, app: &App) {
     let selection = app
         .selection_start
         .map(|s| (s, (app.cursor_y, app.cursor_x)));
+    let line_mode = matches!(app.mode, Mode::VisualLine);
     let lines: Vec<Line> = app
         .display_lines()
         .iter()
         .enumerate()
-        .map(|(i, l)| highlight_line(l.text(), i, app.search_query.as_deref(), selection))
+        .map(|(i, l)| highlight_line(l.text(), i, app.search_query.as_deref(), selection, line_mode))
         .collect();
     let text = Text::from(lines);
     let paragraph = Paragraph::new(text)
