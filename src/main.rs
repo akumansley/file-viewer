@@ -21,11 +21,17 @@ fn is_keyword(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
+enum Mode {
+    Normal,
+    Command(String),
+}
+
 struct App {
     lines: Vec<String>,
     cursor_x: usize,
     cursor_y: usize,
     scroll: u16,
+    mode: Mode,
 }
 
 impl App {
@@ -36,6 +42,7 @@ impl App {
             cursor_x: 0,
             cursor_y: 0,
             scroll: 0,
+            mode: Mode::Normal,
         }
     }
 
@@ -324,47 +331,66 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
 
         if let Event::Key(key) = event::read()? {
             let height = terminal.size()?.height;
-            match key.code {
-                KeyCode::Char('q') => return Ok(()),
-                KeyCode::Char('h') => app.move_left(),
-                KeyCode::Char('j') => app.move_down(height),
-                KeyCode::Char('k') => app.move_up(),
-                KeyCode::Char('l') => app.move_right(),
-                KeyCode::Char('w') => {
-                    app.move_word_forward();
-                    app.ensure_visible(height);
-                }
-                KeyCode::Char('b') => {
-                    app.move_word_backward();
-                    app.ensure_visible(height);
-                }
-                KeyCode::Char('{') => {
-                    app.move_paragraph_up();
-                    app.ensure_visible(height);
-                }
-                KeyCode::Char('}') => {
-                    app.move_paragraph_down();
-                    app.ensure_visible(height);
-                }
-                KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.half_page_up(height);
-                }
-                KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.half_page_down(height);
-                }
-                KeyCode::Char('H') => {
-                    app.cursor_top();
-                    app.ensure_visible(height);
-                }
-                KeyCode::Char('M') => {
-                    app.cursor_middle(height);
-                    app.ensure_visible(height);
-                }
-                KeyCode::Char('L') => {
-                    app.cursor_bottom(height);
-                    app.ensure_visible(height);
-                }
-                _ => {}
+            match &mut app.mode {
+                Mode::Normal => match key.code {
+                    KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
+                    KeyCode::Char('q') => return Ok(()),
+                    KeyCode::Char('h') => app.move_left(),
+                    KeyCode::Char('j') => app.move_down(height),
+                    KeyCode::Char('k') => app.move_up(),
+                    KeyCode::Char('l') => app.move_right(),
+                    KeyCode::Char('w') => {
+                        app.move_word_forward();
+                        app.ensure_visible(height);
+                    }
+                    KeyCode::Char('b') => {
+                        app.move_word_backward();
+                        app.ensure_visible(height);
+                    }
+                    KeyCode::Char('{') => {
+                        app.move_paragraph_up();
+                        app.ensure_visible(height);
+                    }
+                    KeyCode::Char('}') => {
+                        app.move_paragraph_down();
+                        app.ensure_visible(height);
+                    }
+                    KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.half_page_up(height);
+                    }
+                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.half_page_down(height);
+                    }
+                    KeyCode::Char('H') => {
+                        app.cursor_top();
+                        app.ensure_visible(height);
+                    }
+                    KeyCode::Char('M') => {
+                        app.cursor_middle(height);
+                        app.ensure_visible(height);
+                    }
+                    KeyCode::Char('L') => {
+                        app.cursor_bottom(height);
+                        app.ensure_visible(height);
+                    }
+                    _ => {}
+                },
+                Mode::Command(cmd) => match key.code {
+                    KeyCode::Esc => app.mode = Mode::Normal,
+                    KeyCode::Enter => {
+                        if cmd.trim() == "q" {
+                            return Ok(());
+                        }
+                        app.mode = Mode::Normal;
+                    }
+                    KeyCode::Backspace => {
+                        cmd.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        cmd.push(c);
+                    }
+                    _ => {}
+                },
             }
         }
     }
@@ -379,6 +405,19 @@ fn ui(f: &mut Frame, app: &App) {
     let cursor_y = area.y + (app.cursor_y as u16).saturating_sub(app.scroll);
     let cursor_x = area.x + app.cursor_x as u16;
     f.set_cursor_position((cursor_x, cursor_y));
+
+    if let Mode::Command(cmd) = &app.mode {
+        let cmd_area = Rect {
+            x: area.x,
+            y: area.y + area.height.saturating_sub(1),
+            width: area.width,
+            height: 1,
+        };
+        let text = format!(":{}", cmd);
+        let paragraph = Paragraph::new(text);
+        f.render_widget(paragraph, cmd_area);
+        f.set_cursor_position((cmd_area.x + 1 + cmd.len() as u16, cmd_area.y));
+    }
 }
 #[cfg(test)]
 mod tests {
