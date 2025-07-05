@@ -6,6 +6,7 @@ use ratatui::{
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     },
+    layout::{Constraint, Direction, Layout},
     prelude::*,
     widgets::{Paragraph, Wrap},
     Terminal,
@@ -21,6 +22,7 @@ struct App {
     cursor_x: usize,
     cursor_y: usize,
     scroll: u16,
+    command: Option<String>,
 }
 
 impl App {
@@ -31,6 +33,7 @@ impl App {
             cursor_x: 0,
             cursor_y: 0,
             scroll: 0,
+            command: None,
         }
     }
 
@@ -287,47 +290,65 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
 
         if let Event::Key(key) = event::read()? {
             let height = terminal.size()?.height;
-            match key.code {
-                KeyCode::Char('q') => return Ok(()),
-                KeyCode::Char('h') => app.move_left(),
-                KeyCode::Char('j') => app.move_down(height),
-                KeyCode::Char('k') => app.move_up(),
-                KeyCode::Char('l') => app.move_right(),
-                KeyCode::Char('w') => {
-                    app.move_word_forward();
-                    app.ensure_visible(height);
+            if let Some(cmd) = app.command.as_mut() {
+                match key.code {
+                    KeyCode::Esc => app.command = None,
+                    KeyCode::Enter => {
+                        if cmd == "q" {
+                            return Ok(());
+                        }
+                        app.command = None;
+                    }
+                    KeyCode::Char(c) => cmd.push(c),
+                    KeyCode::Backspace => {
+                        cmd.pop();
+                    }
+                    _ => {}
                 }
-                KeyCode::Char('b') => {
-                    app.move_word_backward();
-                    app.ensure_visible(height);
+            } else {
+                match key.code {
+                    KeyCode::Char(':') => app.command = Some(String::new()),
+                    KeyCode::Char('q') => return Ok(()),
+                    KeyCode::Char('h') => app.move_left(),
+                    KeyCode::Char('j') => app.move_down(height),
+                    KeyCode::Char('k') => app.move_up(),
+                    KeyCode::Char('l') => app.move_right(),
+                    KeyCode::Char('w') => {
+                        app.move_word_forward();
+                        app.ensure_visible(height);
+                    }
+                    KeyCode::Char('b') => {
+                        app.move_word_backward();
+                        app.ensure_visible(height);
+                    }
+                    KeyCode::Char('{') => {
+                        app.move_paragraph_up();
+                        app.ensure_visible(height);
+                    }
+                    KeyCode::Char('}') => {
+                        app.move_paragraph_down();
+                        app.ensure_visible(height);
+                    }
+                    KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.half_page_up(height);
+                    }
+                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.half_page_down(height);
+                    }
+                    KeyCode::Char('H') => {
+                        app.cursor_top();
+                        app.ensure_visible(height);
+                    }
+                    KeyCode::Char('M') => {
+                        app.cursor_middle(height);
+                        app.ensure_visible(height);
+                    }
+                    KeyCode::Char('L') => {
+                        app.cursor_bottom(height);
+                        app.ensure_visible(height);
+                    }
+                    _ => {}
                 }
-                KeyCode::Char('{') => {
-                    app.move_paragraph_up();
-                    app.ensure_visible(height);
-                }
-                KeyCode::Char('}') => {
-                    app.move_paragraph_down();
-                    app.ensure_visible(height);
-                }
-                KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.half_page_up(height);
-                }
-                KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.half_page_down(height);
-                }
-                KeyCode::Char('H') => {
-                    app.cursor_top();
-                    app.ensure_visible(height);
-                }
-                KeyCode::Char('M') => {
-                    app.cursor_middle(height);
-                    app.ensure_visible(height);
-                }
-                KeyCode::Char('L') => {
-                    app.cursor_bottom(height);
-                    app.ensure_visible(height);
-                }
-                _ => {}
             }
         }
     }
@@ -335,13 +356,33 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
 
 fn ui(f: &mut Frame, app: &App) {
     let area = f.area();
+    let (text_area, cmd_area) = if app.command.is_some() {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
     let paragraph = Paragraph::new(app.content())
         .wrap(Wrap { trim: true })
         .scroll((app.scroll, 0));
-    f.render_widget(paragraph, area);
-    let cursor_y = area.y + (app.cursor_y as u16).saturating_sub(app.scroll);
-    let cursor_x = area.x + app.cursor_x as u16;
-    f.set_cursor(cursor_x, cursor_y);
+    f.render_widget(paragraph, text_area);
+
+    if let Some(cmd_area) = cmd_area {
+        let text = format!(":{}", app.command.as_deref().unwrap());
+        let cmd = Paragraph::new(text);
+        f.render_widget(cmd, cmd_area);
+        let x = cmd_area.x + 1 + app.command.as_ref().unwrap().len() as u16;
+        let y = cmd_area.y;
+        f.set_cursor(x, y);
+    } else {
+        let cursor_y = text_area.y + (app.cursor_y as u16).saturating_sub(app.scroll);
+        let cursor_x = text_area.x + app.cursor_x as u16;
+        f.set_cursor(cursor_x, cursor_y);
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -353,6 +394,17 @@ mod tests {
     fn initial_ui_snapshot() {
         let content = "hello\nworld".to_string();
         let app = App::new(content);
+        let backend = TestBackend::new(20, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| ui(f, &app)).unwrap();
+        assert_display_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn command_q_ui_snapshot() {
+        let content = "hello\nworld".to_string();
+        let mut app = App::new(content);
+        app.command = Some("q".to_string());
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| ui(f, &app)).unwrap();
