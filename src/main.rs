@@ -1,4 +1,5 @@
 use anyhow::Result;
+use clap::Parser;
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -270,14 +271,23 @@ impl App {
     }
 }
 
+#[derive(Parser)]
+struct Cli {
+    /// Print the file without launching the TUI
+    #[arg(long)]
+    headless: bool,
+
+    /// Path to the file to view
+    path: PathBuf,
+}
+
 fn main() -> Result<()> {
-    let headless = std::env::args().any(|arg| arg == "--headless");
-    let path = std::env::args().nth(1).expect("no file given");
-    let mut file = File::open(PathBuf::from(path))?;
+    let args = Cli::parse();
+    let mut file = File::open(&args.path)?;
     let mut content = String::new();
     file.read_to_string(&mut content)?;
 
-    if headless {
+    if args.headless {
         println!("{}", content);
         return Ok(());
     }
@@ -368,12 +378,12 @@ fn ui(f: &mut Frame, app: &App) {
     f.render_widget(paragraph, area);
     let cursor_y = area.y + (app.cursor_y as u16).saturating_sub(app.scroll);
     let cursor_x = area.x + app.cursor_x as u16;
-    f.set_cursor(cursor_x, cursor_y);
+    f.set_cursor_position((cursor_x, cursor_y));
 }
 #[cfg(test)]
 mod tests {
     use super::*;
-    use insta::assert_display_snapshot;
+    use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
@@ -383,6 +393,6 @@ mod tests {
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| ui(f, &app)).unwrap();
-        assert_display_snapshot!(terminal.backend());
+        assert_snapshot!(terminal.backend());
     }
 }
