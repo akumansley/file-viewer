@@ -26,8 +26,76 @@ enum Mode {
     Command(String),
 }
 
-struct App {
+struct Document {
     lines: Vec<String>,
+}
+
+impl Document {
+    fn new(content: String) -> Self {
+        let lines = content.lines().map(|s| s.to_string()).collect();
+        Self { lines }
+    }
+
+    fn line_len(&self, line: usize) -> usize {
+        self.lines.get(line).map(|l| l.len()).unwrap_or(0)
+    }
+
+    fn num_lines(&self) -> usize {
+        self.lines.len()
+    }
+}
+
+struct OverlayItem {
+    after_line: usize,
+    content: Vec<String>,
+}
+
+enum DisplayLine<'a> {
+    Original { index: usize, text: &'a str },
+    Overlay { overlay_id: usize, text: &'a str },
+}
+
+impl<'a> DisplayLine<'a> {
+    fn text(&self) -> &'a str {
+        match self {
+            DisplayLine::Original { text, .. } => text,
+            DisplayLine::Overlay { text, .. } => text,
+        }
+    }
+}
+
+impl Document {
+    fn compose<'a>(&'a self, overlays: &'a [OverlayItem]) -> Vec<DisplayLine<'a>> {
+        let mut result = Vec::new();
+        let mut o_idx = 0;
+        for (i, line) in self.lines.iter().enumerate() {
+            result.push(DisplayLine::Original { index: i, text: line });
+            while o_idx < overlays.len() && overlays[o_idx].after_line == i {
+                for text in &overlays[o_idx].content {
+                    result.push(DisplayLine::Overlay {
+                        overlay_id: o_idx,
+                        text,
+                    });
+                }
+                o_idx += 1;
+            }
+        }
+        while o_idx < overlays.len() {
+            for text in &overlays[o_idx].content {
+                result.push(DisplayLine::Overlay {
+                    overlay_id: o_idx,
+                    text,
+                });
+            }
+            o_idx += 1;
+        }
+        result
+    }
+}
+
+struct App {
+    doc: Document,
+    overlays: Vec<OverlayItem>,
     cursor_x: usize,
     cursor_y: usize,
     scroll: u16,
@@ -36,9 +104,9 @@ struct App {
 
 impl App {
     fn new(content: String) -> Self {
-        let lines = content.lines().map(|s| s.to_string()).collect();
         Self {
-            lines,
+            doc: Document::new(content),
+            overlays: Vec::new(),
             cursor_x: 0,
             cursor_y: 0,
             scroll: 0,
@@ -46,12 +114,23 @@ impl App {
         }
     }
 
+    fn display_lines(&self) -> Vec<DisplayLine> {
+        self.doc.compose(&self.overlays)
+    }
+
     fn content(&self) -> String {
-        self.lines.join("\n")
+        self.display_lines()
+            .iter()
+            .map(|l| l.text())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn line_len(&self, line: usize) -> usize {
-        self.lines.get(line).map(|l| l.len()).unwrap_or(0)
+        self.display_lines()
+            .get(line)
+            .map(|l| l.text().len())
+            .unwrap_or(0)
     }
 
     fn move_left(&mut self) {
@@ -68,7 +147,7 @@ impl App {
     }
 
     fn move_down(&mut self, height: u16) {
-        if self.cursor_y + 1 < self.lines.len() {
+        if self.cursor_y + 1 < self.display_lines().len() {
             self.cursor_y += 1;
             if (self.cursor_y as u16) >= self.scroll + height {
                 self.scroll = self.cursor_y as u16 - height + 1;
@@ -103,19 +182,22 @@ impl App {
     }
 
     fn char_at(&self, y: usize, x: usize) -> Option<u8> {
-        self.lines.get(y).and_then(|l| l.as_bytes().get(x)).copied()
+        self.display_lines()
+            .get(y)
+            .and_then(|l| l.text().as_bytes().get(x))
+            .copied()
     }
 
     fn char_before(&self, y: usize, x: usize) -> Option<u8> {
+        let lines = self.display_lines();
         if x > 0 {
-            return self
-                .lines
+            return lines
                 .get(y)
-                .and_then(|l| l.as_bytes().get(x - 1))
+                .and_then(|l| l.text().as_bytes().get(x - 1))
                 .copied();
         }
         if y > 0 {
-            return self.lines.get(y - 1)?.as_bytes().last().copied();
+            return lines.get(y - 1)?.text().as_bytes().last().copied();
         }
         None
     }
@@ -124,15 +206,16 @@ impl App {
     where
         F: Fn(u8) -> bool,
     {
-        while *y < self.lines.len() {
-            let bytes = self.lines[*y].as_bytes();
+        let lines = self.display_lines();
+        while *y < lines.len() {
+            let bytes = lines[*y].text().as_bytes();
             while *x < bytes.len() && pred(bytes[*x]) {
                 *x += 1;
             }
             if *x < bytes.len() {
                 return;
             }
-            if *y + 1 == self.lines.len() {
+            if *y + 1 == lines.len() {
                 return;
             }
             *y += 1;
@@ -144,18 +227,19 @@ impl App {
     where
         F: Fn(u8) -> bool,
     {
+        let lines = self.display_lines();
         loop {
             if *y == 0 && *x == 0 {
                 return;
             }
             if *x == 0 {
                 *y -= 1;
-                *x = self.lines[*y].len();
+                *x = lines[*y].text().len();
                 if *x == 0 {
                     continue;
                 }
             }
-            let bytes = self.lines[*y].as_bytes();
+            let bytes = lines[*y].text().as_bytes();
             while *x > 0 && pred(bytes[*x - 1]) {
                 *x -= 1;
             }
@@ -181,7 +265,8 @@ impl App {
 
         self.skip_forward(&mut y, &mut x, |b| b.is_ascii_whitespace());
 
-        self.cursor_y = y.min(self.lines.len().saturating_sub(1));
+        let lines_len = self.display_lines().len();
+        self.cursor_y = y.min(lines_len.saturating_sub(1));
         self.cursor_x = x.min(self.line_len(self.cursor_y));
     }
 
@@ -210,14 +295,15 @@ impl App {
     }
 
     fn move_paragraph_down(&mut self) {
-        for i in self.cursor_y + 1..self.lines.len() {
-            if self.lines[i].trim().is_empty() {
+        let lines = self.display_lines();
+        for i in self.cursor_y + 1..lines.len() {
+            if lines[i].text().trim().is_empty() {
                 self.cursor_y = i;
                 self.cursor_x = 0;
                 return;
             }
         }
-        self.cursor_y = self.lines.len() - 1;
+        self.cursor_y = lines.len().saturating_sub(1);
         self.cursor_x = 0;
     }
 
@@ -225,8 +311,9 @@ impl App {
         if self.cursor_y == 0 {
             return;
         }
+        let lines = self.display_lines();
         for i in (0..self.cursor_y).rev() {
-            if self.lines[i].trim().is_empty() {
+            if lines[i].text().trim().is_empty() {
                 self.cursor_y = i;
                 self.cursor_x = 0;
                 return;
@@ -260,7 +347,7 @@ impl App {
     }
 
     fn cursor_middle(&mut self, height: u16) {
-        let mid = (self.scroll + height / 2).min(self.lines.len() as u16 - 1);
+        let mid = (self.scroll + height / 2).min(self.display_lines().len() as u16 - 1);
         self.cursor_y = mid as usize;
         let len = self.line_len(self.cursor_y);
         if self.cursor_x > len {
@@ -269,7 +356,7 @@ impl App {
     }
 
     fn cursor_bottom(&mut self, height: u16) {
-        let bottom = (self.scroll + height - 1).min(self.lines.len() as u16 - 1);
+        let bottom = (self.scroll + height - 1).min(self.display_lines().len() as u16 - 1);
         self.cursor_y = bottom as usize;
         let len = self.line_len(self.cursor_y);
         if self.cursor_x > len {
@@ -283,8 +370,9 @@ impl App {
     }
 
     fn goto_last_line(&mut self) {
-        if !self.lines.is_empty() {
-            self.cursor_y = self.lines.len() - 1;
+        let lines = self.display_lines();
+        if !lines.is_empty() {
+            self.cursor_y = lines.len() - 1;
             self.cursor_x = 0;
         }
     }
