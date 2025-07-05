@@ -1,14 +1,15 @@
 use anyhow::Result;
+use clap::Parser;
 use ratatui::{
+    Terminal,
     backend::CrosstermBackend,
     crossterm::{
         event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
         execute,
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+        terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
     },
     prelude::*,
     widgets::{Paragraph, Wrap},
-    Terminal,
 };
 use std::{
     fs::File,
@@ -91,10 +92,7 @@ impl App {
     }
 
     fn char_at(&self, y: usize, x: usize) -> Option<u8> {
-        self.lines
-            .get(y)
-            .and_then(|l| l.as_bytes().get(x))
-            .copied()
+        self.lines.get(y).and_then(|l| l.as_bytes().get(x)).copied()
     }
 
     fn skip_forward<F>(&self, y: &mut usize, x: &mut usize, pred: F)
@@ -243,14 +241,23 @@ impl App {
     }
 }
 
+#[derive(Parser)]
+struct Cli {
+    /// Print the file without launching the TUI
+    #[arg(long)]
+    headless: bool,
+
+    /// Path to the file to view
+    path: PathBuf,
+}
+
 fn main() -> Result<()> {
-    let headless = std::env::args().any(|arg| arg == "--headless");
-    let path = std::env::args().nth(1).expect("no file given");
-    let mut file = File::open(PathBuf::from(path))?;
+    let args = Cli::parse();
+    let mut file = File::open(&args.path)?;
     let mut content = String::new();
     file.read_to_string(&mut content)?;
 
-    if headless {
+    if args.headless {
         println!("{}", content);
         return Ok(());
     }
@@ -346,8 +353,8 @@ fn ui(f: &mut Frame, app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::{backend::TestBackend, Terminal};
     use insta::assert_snapshot;
+    use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
     fn initial_ui_snapshot() {
@@ -359,4 +366,3 @@ mod tests {
         assert_snapshot!(terminal.backend());
     }
 }
-
