@@ -12,6 +12,11 @@ pub fn handle(app: &mut App, key: KeyEvent, height: u16, pending_g: &mut bool) -
             app.selection_start = Some((app.cursor_y, app.cursor_x));
             *pending_g = false;
         }
+        KeyCode::Char('V') => {
+            app.mode = Mode::VisualLine;
+            app.selection_start = Some((app.cursor_y, app.cursor_x));
+            *pending_g = false;
+        }
         KeyCode::Char('g') => {
             if *pending_g {
                 app.goto_first_line();
