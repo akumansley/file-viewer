@@ -449,4 +449,30 @@ mod tests {
         terminal.draw(|f| ui(f, &app)).unwrap();
         assert_snapshot!(terminal.backend());
     }
+
+    #[test]
+    fn scrolling_ctrl_d_and_ctrl_u() {
+        // Build content with many lines so we can scroll
+        let content: String = (1..=20)
+            .map(|i| format!("line {i}\n"))
+            .collect();
+        let mut app = App::new(content);
+        let backend = TestBackend::new(20, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let height = terminal.size().unwrap().height;
+
+        // Scroll down using Ctrl-D three times to move the viewport
+        for _ in 0..3 {
+            app.half_page_down(height);
+        }
+        terminal.draw(|f| ui(f, &app)).unwrap();
+        assert_snapshot!("after_ctrl_d", terminal.backend());
+
+        // Scroll back up using Ctrl-U three times
+        for _ in 0..3 {
+            app.half_page_up(height);
+        }
+        terminal.draw(|f| ui(f, &app)).unwrap();
+        assert_snapshot!("after_ctrl_u", terminal.backend());
+    }
 }
