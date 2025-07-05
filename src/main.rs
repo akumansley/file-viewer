@@ -42,11 +42,6 @@ fn highlight_line<'a>(
                     }
                 }
 
-                spans.push(Span::styled(
-                    &line[start + pos..start + pos + q.len()],
-                    Style::default().bg(Color::Yellow),
-                ));
-
                 start += pos + q.len();
             }
         }
@@ -99,6 +94,7 @@ fn highlight_line<'a>(
 enum Mode {
     Normal,
     Visual,
+    VisualLine,
     Command(String),
     Search(String),
 }
@@ -562,10 +558,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
         if let Event::Key(key) = event::read()? {
             let height = terminal.size()?.height.saturating_sub(1);
 
-
             let mut mode = mem::replace(&mut app.mode, Mode::Normal);
             let quit = match &mut mode {
                 Mode::Normal => keymaps::normal::handle(&mut app, key, height, &mut pending_g),
+                Mode::Visual | Mode::VisualLine => keymaps::visual::handle(&mut app, key, height),
                 Mode::Command(cmd) => keymaps::command::handle(&mut app, cmd, key, height),
                 Mode::Search(query) => keymaps::search::handle(&mut app, query, key, height),
             };
@@ -573,7 +569,6 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
 
             if quit {
                 return Ok(());
-
             }
         }
     }
@@ -588,9 +583,14 @@ fn ui(f: &mut Frame, app: &App) {
         width: area.width,
         height: main_height,
     };
-    let selection = app
-        .selection_start
-        .map(|s| (s, (app.cursor_y, app.cursor_x)));
+    let selection = app.selection_start.map(|s| {
+        let end_x = if matches!(app.mode, Mode::VisualLine) {
+            app.line_len(app.cursor_y)
+        } else {
+            app.cursor_x
+        };
+        (s, (app.cursor_y, end_x))
+    });
     let lines: Vec<Line> = app
         .display_lines()
         .iter()

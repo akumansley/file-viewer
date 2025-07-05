@@ -2,39 +2,13 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{App, Mode};
 
-pub fn handle(app: &mut App, key: KeyEvent, height: u16, pending_g: &mut bool) -> bool {
-    if key.code != KeyCode::Char('g') {
-        *pending_g = false;
-    }
+pub fn handle(app: &mut App, key: KeyEvent, height: u16) -> bool {
     match key.code {
-        KeyCode::Char('v') => {
-            app.mode = Mode::Visual;
-            app.selection_start = Some((app.cursor_y, app.cursor_x));
-            *pending_g = false;
-        }
-        KeyCode::Char('V') => {
-            app.mode = Mode::VisualLine;
-            app.selection_start = Some((app.cursor_y, 0));
-            app.cursor_x = 0;
-            *pending_g = false;
-        }
-        KeyCode::Char('g') => {
-            if *pending_g {
-                app.goto_first_line();
-                app.ensure_visible(height);
-                *pending_g = false;
-            } else {
-                *pending_g = true;
-            }
-        }
-        KeyCode::Char('G') => {
-            app.goto_last_line();
-            app.ensure_visible(height);
-            *pending_g = false;
-        }
-        KeyCode::Char('/') => {
-            app.mode = Mode::Search(String::new());
-            *pending_g = false;
+        KeyCode::Esc | KeyCode::Char('v') | KeyCode::Char('V') | KeyCode::Char('c')
+            if key.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
+            app.mode = Mode::Normal;
+            app.selection_start = None;
         }
         KeyCode::Char('n') => app.next_hit(height),
         KeyCode::Char('N') => app.prev_hit(height),
@@ -78,9 +52,7 @@ pub fn handle(app: &mut App, key: KeyEvent, height: u16, pending_g: &mut bool) -
             app.cursor_bottom(height);
             app.ensure_visible(height);
         }
-        _ => {
-            *pending_g = false;
-        }
+        _ => {}
     }
     false
 }
