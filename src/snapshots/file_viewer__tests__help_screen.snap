@@ -1,0 +1,10 @@
+---
+source: src/main.rs
+assertion_line: 706
+expression: terminal.backend()
+---
+"       q: quit      "
+"       ?: help      "
+"    h/j/k/l: move   "
+"   g/G: top/bottom  "
+"      /: search     "

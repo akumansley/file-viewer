@@ -4,7 +4,7 @@ use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     crossterm::{
-        event::{self, DisableMouseCapture, EnableMouseCapture, Event},
+        event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
         execute,
         terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
     },
@@ -41,12 +41,6 @@ fn highlight_line<'a>(
                         styles[i] = styles[i].bg(Color::Yellow);
                     }
                 }
-
-                spans.push(Span::styled(
-                    &line[start + pos..start + pos + q.len()],
-                    Style::default().bg(Color::Yellow),
-                ));
-
                 start += pos + q.len();
             }
         }
@@ -101,7 +95,19 @@ enum Mode {
     Visual,
     Command(String),
     Search(String),
+    /// Displaying help information
+    Help,
 }
+
+/// Lines shown when the user activates help
+static HELP_TEXT: &[&str] = &[
+    "q: quit",
+    "?: help",
+    "h/j/k/l: move",
+    "g/G: top/bottom",
+    "/: search",
+    ": enter command",
+];
 
 struct Document {
     lines: Vec<String>,
@@ -562,12 +568,23 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
         if let Event::Key(key) = event::read()? {
             let height = terminal.size()?.height.saturating_sub(1);
 
+            if key.code == KeyCode::Char('?') {
+                app.mode = Mode::Help;
+                continue;
+            }
 
             let mut mode = mem::replace(&mut app.mode, Mode::Normal);
             let quit = match &mut mode {
-                Mode::Normal => keymaps::normal::handle(&mut app, key, height, &mut pending_g),
+                Mode::Normal | Mode::Visual => keymaps::normal::handle(&mut app, key, height, &mut pending_g),
                 Mode::Command(cmd) => keymaps::command::handle(&mut app, cmd, key, height),
                 Mode::Search(query) => keymaps::search::handle(&mut app, query, key, height),
+                Mode::Help => {
+                    match key.code {
+                        KeyCode::Esc | KeyCode::Char('q') => app.mode = Mode::Normal,
+                        _ => {}
+                    }
+                    false
+                }
             };
             app.mode = mode;
 
@@ -581,6 +598,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
 
 fn ui(f: &mut Frame, app: &App) {
     let area = f.area();
+    if matches!(app.mode, Mode::Help) {
+        let text = HELP_TEXT.join("\n");
+        let paragraph = Paragraph::new(text).alignment(Alignment::Center);
+        f.render_widget(paragraph, area);
+        return;
+    }
     let main_height = area.height.saturating_sub(1);
     let main_area = Rect {
         x: area.x,
@@ -670,5 +693,16 @@ mod tests {
         }
         terminal.draw(|f| ui(f, &app)).unwrap();
         assert_snapshot!("after_ctrl_u", terminal.backend());
+    }
+
+    #[test]
+    fn help_screen_snapshot() {
+        let content = "hello".to_string();
+        let mut app = App::new(content);
+        app.mode = Mode::Help;
+        let backend = TestBackend::new(20, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| ui(f, &app)).unwrap();
+        assert_snapshot!("help_screen", terminal.backend());
     }
 }

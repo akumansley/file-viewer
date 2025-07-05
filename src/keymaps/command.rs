@@ -9,10 +9,11 @@ pub fn handle(app: &mut App, cmd: &mut String, key: KeyEvent, _height: u16) -> b
             app.mode = Mode::Normal;
         }
         KeyCode::Enter => {
-            if cmd.trim() == "q" {
-                return true;
+            match cmd.trim() {
+                "q" => return true,
+                "h" | "help" => app.mode = Mode::Help,
+                _ => app.mode = Mode::Normal,
             }
-            app.mode = Mode::Normal;
         }
         KeyCode::Backspace => {
             cmd.pop();
