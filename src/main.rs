@@ -527,7 +527,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
                         pending_g = false;
                     }
                     KeyCode::Char('n') => app.next_hit(height),
-                    KeyCode::Char('p') => app.prev_hit(height),
+                    KeyCode::Char('N') => app.prev_hit(height),
                     KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
                     KeyCode::Char('q') => return Ok(()),
                     KeyCode::Char('h') => app.move_left(),
