@@ -1,20 +1,24 @@
 use anyhow::Result;
 use ratatui::{
+    Terminal,
     backend::CrosstermBackend,
     crossterm::{
         event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
         execute,
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+        terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
     },
     prelude::*,
     widgets::{Paragraph, Wrap},
-    Terminal,
 };
 use std::{
     fs::File,
     io::{self, Read},
     path::PathBuf,
 };
+
+fn is_keyword(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
 
 struct App {
     lines: Vec<String>,
@@ -91,10 +95,21 @@ impl App {
     }
 
     fn char_at(&self, y: usize, x: usize) -> Option<u8> {
-        self.lines
-            .get(y)
-            .and_then(|l| l.as_bytes().get(x))
-            .copied()
+        self.lines.get(y).and_then(|l| l.as_bytes().get(x)).copied()
+    }
+
+    fn char_before(&self, y: usize, x: usize) -> Option<u8> {
+        if x > 0 {
+            return self
+                .lines
+                .get(y)
+                .and_then(|l| l.as_bytes().get(x - 1))
+                .copied();
+        }
+        if y > 0 {
+            return self.lines.get(y - 1)?.as_bytes().last().copied();
+        }
+        None
     }
 
     fn skip_forward<F>(&self, y: &mut usize, x: &mut usize, pred: F)
@@ -147,13 +162,16 @@ impl App {
         if let Some(c) = self.char_at(y, x) {
             if c.is_ascii_whitespace() {
                 self.skip_forward(&mut y, &mut x, |b| b.is_ascii_whitespace());
+            } else if is_keyword(c) {
+                self.skip_forward(&mut y, &mut x, |b| is_keyword(b));
             } else {
-                self.skip_forward(&mut y, &mut x, |b| !b.is_ascii_whitespace());
-                self.skip_forward(&mut y, &mut x, |b| b.is_ascii_whitespace());
+                self.skip_forward(&mut y, &mut x, |b| {
+                    !is_keyword(b) && !b.is_ascii_whitespace()
+                });
             }
-        } else {
-            self.skip_forward(&mut y, &mut x, |b| b.is_ascii_whitespace());
         }
+
+        self.skip_forward(&mut y, &mut x, |b| b.is_ascii_whitespace());
 
         self.cursor_y = y.min(self.lines.len().saturating_sub(1));
         self.cursor_x = x.min(self.line_len(self.cursor_y));
@@ -168,7 +186,16 @@ impl App {
         let mut x = self.cursor_x;
 
         self.skip_backward(&mut y, &mut x, |b| b.is_ascii_whitespace());
-        self.skip_backward(&mut y, &mut x, |b| !b.is_ascii_whitespace());
+
+        if let Some(c) = self.char_before(y, x) {
+            if is_keyword(c) {
+                self.skip_backward(&mut y, &mut x, |b| is_keyword(b));
+            } else {
+                self.skip_backward(&mut y, &mut x, |b| {
+                    !is_keyword(b) && !b.is_ascii_whitespace()
+                });
+            }
+        }
 
         self.cursor_y = y;
         self.cursor_x = x;
@@ -346,8 +373,8 @@ fn ui(f: &mut Frame, app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::{backend::TestBackend, Terminal};
     use insta::assert_display_snapshot;
+    use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
     fn initial_ui_snapshot() {
@@ -359,4 +386,3 @@ mod tests {
         assert_display_snapshot!(terminal.backend());
     }
 }
-
