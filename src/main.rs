@@ -17,6 +17,10 @@ use std::{
     path::PathBuf,
 };
 
+fn is_keyword(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
 struct App {
     lines: Vec<String>,
     cursor_x: usize,
@@ -95,6 +99,20 @@ impl App {
         self.lines.get(y).and_then(|l| l.as_bytes().get(x)).copied()
     }
 
+    fn char_before(&self, y: usize, x: usize) -> Option<u8> {
+        if x > 0 {
+            return self
+                .lines
+                .get(y)
+                .and_then(|l| l.as_bytes().get(x - 1))
+                .copied();
+        }
+        if y > 0 {
+            return self.lines.get(y - 1)?.as_bytes().last().copied();
+        }
+        None
+    }
+
     fn skip_forward<F>(&self, y: &mut usize, x: &mut usize, pred: F)
     where
         F: Fn(u8) -> bool,
@@ -145,13 +163,16 @@ impl App {
         if let Some(c) = self.char_at(y, x) {
             if c.is_ascii_whitespace() {
                 self.skip_forward(&mut y, &mut x, |b| b.is_ascii_whitespace());
+            } else if is_keyword(c) {
+                self.skip_forward(&mut y, &mut x, |b| is_keyword(b));
             } else {
-                self.skip_forward(&mut y, &mut x, |b| !b.is_ascii_whitespace());
-                self.skip_forward(&mut y, &mut x, |b| b.is_ascii_whitespace());
+                self.skip_forward(&mut y, &mut x, |b| {
+                    !is_keyword(b) && !b.is_ascii_whitespace()
+                });
             }
-        } else {
-            self.skip_forward(&mut y, &mut x, |b| b.is_ascii_whitespace());
         }
+
+        self.skip_forward(&mut y, &mut x, |b| b.is_ascii_whitespace());
 
         self.cursor_y = y.min(self.lines.len().saturating_sub(1));
         self.cursor_x = x.min(self.line_len(self.cursor_y));
@@ -166,7 +187,16 @@ impl App {
         let mut x = self.cursor_x;
 
         self.skip_backward(&mut y, &mut x, |b| b.is_ascii_whitespace());
-        self.skip_backward(&mut y, &mut x, |b| !b.is_ascii_whitespace());
+
+        if let Some(c) = self.char_before(y, x) {
+            if is_keyword(c) {
+                self.skip_backward(&mut y, &mut x, |b| is_keyword(b));
+            } else {
+                self.skip_backward(&mut y, &mut x, |b| {
+                    !is_keyword(b) && !b.is_ascii_whitespace()
+                });
+            }
+        }
 
         self.cursor_y = y;
         self.cursor_x = x;
