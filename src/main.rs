@@ -343,3 +343,20 @@ fn ui(f: &mut Frame, app: &App) {
     let cursor_x = area.x + app.cursor_x as u16;
     f.set_cursor(cursor_x, cursor_y);
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{backend::TestBackend, Terminal};
+    use insta::assert_display_snapshot;
+
+    #[test]
+    fn initial_ui_snapshot() {
+        let content = "hello\nworld".to_string();
+        let app = App::new(content);
+        let backend = TestBackend::new(20, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| ui(f, &app)).unwrap();
+        assert_display_snapshot!(terminal.backend());
+    }
+}
+
