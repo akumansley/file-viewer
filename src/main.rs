@@ -58,13 +58,6 @@ impl Document {
         Self { lines }
     }
 
-    fn line_len(&self, line: usize) -> usize {
-        self.lines.get(line).map(|l| l.len()).unwrap_or(0)
-    }
-
-    fn num_lines(&self) -> usize {
-        self.lines.len()
-    }
 }
 
 struct OverlayItem {
@@ -73,15 +66,15 @@ struct OverlayItem {
 }
 
 enum DisplayLine<'a> {
-    Original { index: usize, text: &'a str },
-    Overlay { overlay_id: usize, text: &'a str },
+    Original(&'a str),
+    Overlay(&'a str),
 }
 
 impl<'a> DisplayLine<'a> {
     fn text(&self) -> &'a str {
         match self {
-            DisplayLine::Original { text, .. } => text,
-            DisplayLine::Overlay { text, .. } => text,
+            DisplayLine::Original(text) => text,
+            DisplayLine::Overlay(text) => text,
         }
     }
 }
@@ -91,23 +84,17 @@ impl Document {
         let mut result = Vec::new();
         let mut o_idx = 0;
         for (i, line) in self.lines.iter().enumerate() {
-            result.push(DisplayLine::Original { index: i, text: line });
+            result.push(DisplayLine::Original(line));
             while o_idx < overlays.len() && overlays[o_idx].after_line == i {
                 for text in &overlays[o_idx].content {
-                    result.push(DisplayLine::Overlay {
-                        overlay_id: o_idx,
-                        text,
-                    });
+                    result.push(DisplayLine::Overlay(text));
                 }
                 o_idx += 1;
             }
         }
         while o_idx < overlays.len() {
             for text in &overlays[o_idx].content {
-                result.push(DisplayLine::Overlay {
-                    overlay_id: o_idx,
-                    text,
-                });
+                result.push(DisplayLine::Overlay(text));
             }
             o_idx += 1;
         }
@@ -144,14 +131,6 @@ impl App {
 
     fn display_lines(&self) -> Vec<DisplayLine> {
         self.doc.compose(&self.overlays)
-    }
-
-    fn content(&self) -> String {
-        self.display_lines()
-            .iter()
-            .map(|l| l.text())
-            .collect::<Vec<_>>()
-            .join("\n")
     }
 
     fn line_len(&self, line: usize) -> usize {
@@ -324,8 +303,8 @@ impl App {
 
     fn move_paragraph_down(&mut self) {
         let lines = self.display_lines();
-        for i in self.cursor_y + 1..lines.len() {
-            if lines[i].text().trim().is_empty() {
+        for (i, line) in lines.iter().enumerate().skip(self.cursor_y + 1) {
+            if line.text().trim().is_empty() {
                 self.cursor_y = i;
                 self.cursor_x = 0;
                 return;
@@ -340,14 +319,11 @@ impl App {
             return;
         }
         let lines = self.display_lines();
-        for i in (0..self.cursor_y).rev() {
-            if lines[i].text().trim().is_empty() {
+        for (i, line) in lines.iter().enumerate().take(self.cursor_y).rev() {
+            if line.text().trim().is_empty() {
                 self.cursor_y = i;
                 self.cursor_x = 0;
                 return;
-            }
-            if i == 0 {
-                break;
             }
         }
         self.cursor_y = 0;
@@ -414,7 +390,12 @@ impl App {
         }
         self.search_query = Some(query.clone());
         self.search_hits.clear();
-        for (y, line) in self.lines.iter().enumerate() {
+        let lines: Vec<String> = self
+            .display_lines()
+            .into_iter()
+            .map(|l| l.text().to_owned())
+            .collect();
+        for (y, line) in lines.iter().enumerate() {
             let mut start = 0;
             while let Some(pos) = line[start..].find(&query) {
                 self.search_hits.push((y, start + pos));
@@ -646,9 +627,9 @@ fn ui(f: &mut Frame, app: &App) {
         height: main_height,
     };
     let lines: Vec<Line> = app
-        .lines
+        .display_lines()
         .iter()
-        .map(|l| highlight_line(l, app.search_query.as_deref()))
+        .map(|l| highlight_line(l.text(), app.search_query.as_deref()))
         .collect();
     let text = Text::from(lines);
     let paragraph = Paragraph::new(text)
