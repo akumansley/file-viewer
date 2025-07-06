@@ -12,7 +12,6 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 mod keymaps;
-use std::mem;
 use std::{
     fs::File,
     io::{self, Read},
@@ -571,7 +570,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
         if let Event::Key(key) = event::read()? {
             let height = terminal.size()?.height.saturating_sub(1);
 
-            let mode = mem::replace(&mut app.mode, Mode::Normal);
+            let mode = app.mode.clone();
             let quit = match mode {
                 Mode::Normal => {
                     app.mode = Mode::Normal;
@@ -587,12 +586,16 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
                 }
                 Mode::Command(mut cmd) => {
                     let quit = keymaps::command::handle(&mut app, &mut cmd, key, height);
-                    app.mode = Mode::Command(cmd);
+                    if matches!(app.mode, Mode::Command(_)) {
+                        app.mode = Mode::Command(cmd);
+                    }
                     quit
                 }
                 Mode::Search(mut query) => {
                     let quit = keymaps::search::handle(&mut app, &mut query, key, height);
-                    app.mode = Mode::Search(query);
+                    if matches!(app.mode, Mode::Search(_)) {
+                        app.mode = Mode::Search(query);
+                    }
                     quit
                 }
                 Mode::Help => {
