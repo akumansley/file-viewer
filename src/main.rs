@@ -689,7 +689,7 @@ fn ui(f: &mut Frame, app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use insta::{assert_snapshot, assert_debug_snapshot};
+    use insta::{assert_debug_snapshot, assert_snapshot};
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::{Terminal, backend::TestBackend};
 
