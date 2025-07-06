@@ -458,16 +458,57 @@ pub fn lookup_and_run(
     false
 }
 
+fn format_key(key: KeyEvent) -> String {
+    use KeyCode::*;
+    let mut parts = Vec::new();
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        parts.push("Ctrl".to_string());
+    }
+    if key.modifiers.contains(KeyModifiers::ALT) {
+        parts.push("Alt".to_string());
+    }
+    let code = match key.code {
+        Char(c) => c.to_string(),
+        Enter => "Enter".to_string(),
+        Esc => "Esc".to_string(),
+        Backspace => "Backspace".to_string(),
+        _ => format!("{:?}", key.code),
+    };
+    parts.push(code);
+    parts.join("-")
+}
+
 pub fn help_lines() -> Vec<String> {
     let mut lines = vec!["File Viewer Help".to_string(), String::new()];
-    for binding in NORMAL_BINDINGS
-        .iter()
-        .chain(VISUAL_BINDINGS)
-        .chain(COMMAND_BINDINGS)
-        .chain(SEARCH_BINDINGS)
-        .chain(HELP_BINDINGS)
-    {
-        lines.push(format!("{:?} - {}", binding.key.code, binding.help));
+
+    lines.push("Normal mode:".to_string());
+    for binding in NORMAL_BINDINGS {
+        lines.push(format!("{} - {}", format_key(binding.key), binding.help));
     }
+    lines.push(String::new());
+
+    lines.push("Visual mode:".to_string());
+    for binding in VISUAL_BINDINGS {
+        lines.push(format!("{} - {}", format_key(binding.key), binding.help));
+    }
+    lines.push(String::new());
+
+    lines.push("Command mode:".to_string());
+    for binding in COMMAND_BINDINGS {
+        lines.push(format!("{} - {}", format_key(binding.key), binding.help));
+    }
+    lines.push(String::new());
+
+    lines.push("Search mode:".to_string());
+    for binding in SEARCH_BINDINGS {
+        lines.push(format!("{} - {}", format_key(binding.key), binding.help));
+    }
+    lines.push(String::new());
+
+    lines.push("Help screen:".to_string());
+    for binding in HELP_BINDINGS {
+        lines.push(format!("{} - {}", format_key(binding.key), binding.help));
+    }
+
     lines
 }

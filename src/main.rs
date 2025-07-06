@@ -779,7 +779,7 @@ mod tests {
         let content = "hello".to_string();
         let mut app = App::new(content);
         app.mode = Mode::Command("help".into());
-        let backend = TestBackend::new(20, 5);
+        let backend = TestBackend::new(20, 20);
         let mut terminal = Terminal::new(backend).unwrap();
         let height = terminal.size().unwrap().height.saturating_sub(1);
         let mut ctx = commands::Context {
@@ -797,7 +797,7 @@ mod tests {
         let content = "hello".to_string();
         let mut app = App::new(content);
         app.mode = Mode::Help;
-        let backend = TestBackend::new(20, 5);
+        let backend = TestBackend::new(20, 20);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| ui(f, &app)).unwrap();
         assert_snapshot!("help_screen", terminal.backend());
