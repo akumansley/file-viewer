@@ -1,0 +1,9 @@
+---
+source: src/main.rs
+expression: terminal.backend()
+---
+"File Viewer Help    "
+"                    "
+"?     Show this help"
+":help Open help     "
+"screen              "
