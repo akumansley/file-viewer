@@ -672,6 +672,14 @@ fn ui(f: &mut Frame, app: &App) {
             f.render_widget(paragraph, cmd_area);
             f.set_cursor_position((cmd_area.x + 1 + query.len() as u16, cmd_area.y));
         }
+        Mode::Visual => {
+            let paragraph = Paragraph::new("-- VISUAL --");
+            f.render_widget(paragraph, cmd_area);
+        }
+        Mode::VisualLine => {
+            let paragraph = Paragraph::new("-- VISUAL LINE --");
+            f.render_widget(paragraph, cmd_area);
+        }
         _ => {
             let blank = Paragraph::new("");
             f.render_widget(blank, cmd_area);
@@ -766,5 +774,27 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| ui(f, &app)).unwrap();
         assert_snapshot!("help_screen", terminal.backend());
+    }
+
+    #[test]
+    fn visual_mode_indicator() {
+        let content = "hello".to_string();
+        let mut app = App::new(content);
+        app.mode = Mode::Visual;
+        let backend = TestBackend::new(20, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| ui(f, &app)).unwrap();
+        assert_snapshot!("visual_mode_indicator", terminal.backend());
+    }
+
+    #[test]
+    fn visual_line_mode_indicator() {
+        let content = "hello".to_string();
+        let mut app = App::new(content);
+        app.mode = Mode::VisualLine;
+        let backend = TestBackend::new(20, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| ui(f, &app)).unwrap();
+        assert_snapshot!("visual_line_mode_indicator", terminal.backend());
     }
 }
