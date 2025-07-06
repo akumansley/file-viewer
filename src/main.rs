@@ -28,6 +28,7 @@ fn highlight_line<'a>(
     line_idx: usize,
     query: Option<&str>,
     selection: Option<((usize, usize), (usize, usize))>,
+    line_mode: bool,
 ) -> Line<'a> {
     let bytes = line.as_bytes();
     let mut styles = vec![Style::default(); bytes.len()];
@@ -56,19 +57,17 @@ fn highlight_line<'a>(
             (end, start)
         };
         if line_idx >= sy && line_idx <= ey {
-            let sel_start = if line_idx == sy {
-                sx.min(bytes.len())
+            if line_mode {
+                for style in &mut styles {
+                    *style = style.add_modifier(Modifier::REVERSED);
+                }
             } else {
-                0
-            };
-            let sel_end = if line_idx == ey {
-                ex.min(bytes.len())
-            } else {
-                bytes.len()
-            };
-            for i in sel_start..sel_end {
-                if i < styles.len() {
-                    styles[i] = styles[i].add_modifier(Modifier::REVERSED);
+                let sel_start = if line_idx == sy { sx.min(bytes.len()) } else { 0 };
+                let sel_end = if line_idx == ey { ex.min(bytes.len()) } else { bytes.len() };
+                for i in sel_start..sel_end {
+                    if i < styles.len() {
+                        styles[i] = styles[i].add_modifier(Modifier::REVERSED);
+                    }
                 }
             }
         }
@@ -93,11 +92,15 @@ fn highlight_line<'a>(
     Line::from(spans)
 }
 
+const HELP_TEXT: &str = "File Viewer Help\n\n?     Show this help\n:help Open help screen\nq     Quit\nEsc   Close help";
+
 enum Mode {
     Normal,
     Visual,
+    VisualLine,
     Command(String),
     Search(String),
+    Help,
 }
 
 struct Document {
@@ -562,9 +565,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
             let mut mode = mem::replace(&mut app.mode, Mode::Normal);
             let quit = match &mut mode {
                 Mode::Normal => keymaps::normal::handle(&mut app, key, height, &mut pending_g),
-                Mode::Visual => keymaps::visual::handle(&mut app, key, height),
+                Mode::Visual | Mode::VisualLine => keymaps::visual::handle(&mut app, key, height),
                 Mode::Command(cmd) => keymaps::command::handle(&mut app, cmd, key, height),
                 Mode::Search(query) => keymaps::search::handle(&mut app, query, key, height),
+                Mode::Help => keymaps::help::handle(&mut app, key, height),
             };
             app.mode = mode;
 
@@ -577,6 +581,11 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
 
 fn ui(f: &mut Frame, app: &App) {
     let area = f.area();
+    if matches!(app.mode, Mode::Help) {
+        let paragraph = Paragraph::new(HELP_TEXT).wrap(Wrap { trim: true });
+        f.render_widget(paragraph, area);
+        return;
+    }
     let main_height = area.height.saturating_sub(1);
     let main_area = Rect {
         x: area.x,
@@ -587,11 +596,12 @@ fn ui(f: &mut Frame, app: &App) {
     let selection = app
         .selection_start
         .map(|s| (s, (app.cursor_y, app.cursor_x)));
+    let line_mode = matches!(app.mode, Mode::VisualLine);
     let lines: Vec<Line> = app
         .display_lines()
         .iter()
         .enumerate()
-        .map(|(i, l)| highlight_line(l.text(), i, app.search_query.as_deref(), selection))
+        .map(|(i, l)| highlight_line(l.text(), i, app.search_query.as_deref(), selection, line_mode))
         .collect();
     let text = Text::from(lines);
     let paragraph = Paragraph::new(text)
@@ -677,5 +687,14 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| ui(f, &app)).unwrap();
         assert_snapshot!("command_q_ui", terminal.backend());
+    }
+    fn help_screen_renders() {
+        let content = "hello".to_string();
+        let mut app = App::new(content);
+        app.mode = Mode::Help;
+        let backend = TestBackend::new(20, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| ui(f, &app)).unwrap();
+        assert_snapshot!("help_screen", terminal.backend());
     }
 }

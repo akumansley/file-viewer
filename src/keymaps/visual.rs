@@ -29,6 +29,9 @@ pub fn handle(app: &mut App, key: KeyEvent, height: u16) -> bool {
             app.move_paragraph_down();
             app.ensure_visible(height);
         }
+        KeyCode::Char('?') => {
+            app.mode = Mode::Help;
+        }
         KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.half_page_up(height);
         }
