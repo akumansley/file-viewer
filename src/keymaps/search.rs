@@ -1,27 +1,15 @@
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::KeyEvent;
 
-use crate::{App, Mode};
+use crate::App;
+use crate::commands::{Context, EditorCommand, SEARCH_BINDINGS, lookup_and_run};
 
-pub fn handle(app: &mut App, query: &mut String, key: KeyEvent, height: u16) -> bool {
-    match key.code {
-        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.clear_search();
-            app.mode = Mode::Normal;
+pub fn handle(app: &mut App, key: KeyEvent, ctx: &mut Context) -> bool {
+    if let ratatui::crossterm::event::KeyCode::Char(c) = key.code {
+        if SEARCH_BINDINGS.iter().any(|b| b.key == key) {
+            return lookup_and_run(SEARCH_BINDINGS, key, app, ctx);
+        } else {
+            return EditorCommand::SearchChar(c).run(app, ctx);
         }
-        KeyCode::Esc => app.mode = Mode::Normal,
-        KeyCode::Enter => {
-            let q = query.clone();
-            app.set_search_query(q);
-            app.mode = Mode::Normal;
-            app.ensure_visible(height);
-        }
-        KeyCode::Backspace => {
-            query.pop();
-        }
-        KeyCode::Char(c) => {
-            query.push(c);
-        }
-        _ => {}
     }
-    false
+    lookup_and_run(SEARCH_BINDINGS, key, app, ctx)
 }

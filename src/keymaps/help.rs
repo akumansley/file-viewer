@@ -1,13 +1,8 @@
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
+use ratatui::crossterm::event::KeyEvent;
 
-use crate::{App, Mode};
+use crate::App;
+use crate::commands::{Context, HELP_BINDINGS, lookup_and_run};
 
-pub fn handle(app: &mut App, key: KeyEvent, _height: u16) -> bool {
-    match key.code {
-        KeyCode::Char('q') | KeyCode::Esc => {
-            app.mode = Mode::Normal;
-        }
-        _ => {}
-    }
-    false
+pub fn handle(app: &mut App, key: KeyEvent, ctx: &mut Context) -> bool {
+    lookup_and_run(HELP_BINDINGS, key, app, ctx)
 }
