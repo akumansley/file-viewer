@@ -11,6 +11,7 @@ use ratatui::{
     prelude::*,
     widgets::{Paragraph, Wrap},
 };
+mod commands;
 mod keymaps;
 use std::{
     fs::File,
@@ -98,8 +99,6 @@ fn highlight_line<'a>(
 
     Line::from(spans)
 }
-
-const HELP_TEXT: &str = "File Viewer Help\n\n?     Show this help\n:help Open help screen\nq     Quit\nEsc   Close help";
 
 #[derive(Clone)]
 enum Mode {
@@ -563,44 +562,35 @@ fn main() -> Result<()> {
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Result<()> {
     let mut app = App::new(content);
-    let mut pending_g = false;
+    let mut ctx = commands::Context {
+        height: 0,
+        pending_g: false,
+    };
     loop {
         terminal.draw(|f| ui(f, &app))?;
 
         if let Event::Key(key) = event::read()? {
-            let height = terminal.size()?.height.saturating_sub(1);
+            ctx.height = terminal.size()?.height.saturating_sub(1);
 
             let mode = app.mode.clone();
             let quit = match mode {
                 Mode::Normal => {
                     app.mode = Mode::Normal;
-                    keymaps::normal::handle(&mut app, key, height, &mut pending_g)
+                    keymaps::normal::handle(&mut app, key, &mut ctx)
                 }
                 Mode::Visual => {
                     app.mode = Mode::Visual;
-                    keymaps::visual::handle(&mut app, key, height)
+                    keymaps::visual::handle(&mut app, key, &mut ctx)
                 }
                 Mode::VisualLine => {
                     app.mode = Mode::VisualLine;
-                    keymaps::visual::handle(&mut app, key, height)
+                    keymaps::visual::handle(&mut app, key, &mut ctx)
                 }
-                Mode::Command(mut cmd) => {
-                    let quit = keymaps::command::handle(&mut app, &mut cmd, key, height);
-                    if matches!(app.mode, Mode::Command(_)) {
-                        app.mode = Mode::Command(cmd);
-                    }
-                    quit
-                }
-                Mode::Search(mut query) => {
-                    let quit = keymaps::search::handle(&mut app, &mut query, key, height);
-                    if matches!(app.mode, Mode::Search(_)) {
-                        app.mode = Mode::Search(query);
-                    }
-                    quit
-                }
+                Mode::Command(_) => keymaps::command::handle(&mut app, key, &mut ctx),
+                Mode::Search(_) => keymaps::search::handle(&mut app, key, &mut ctx),
                 Mode::Help => {
                     app.mode = Mode::Help;
-                    keymaps::help::handle(&mut app, key, height)
+                    keymaps::help::handle(&mut app, key, &mut ctx)
                 }
             };
 
@@ -614,7 +604,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
 fn ui(f: &mut Frame, app: &App) {
     let area = f.area();
     if matches!(app.mode, Mode::Help) {
-        let paragraph = Paragraph::new(HELP_TEXT).wrap(Wrap { trim: true });
+        let text = commands::help_lines().join("\n");
+        let paragraph = Paragraph::new(text).wrap(Wrap { trim: true });
         f.render_widget(paragraph, area);
         return;
     }
@@ -689,7 +680,7 @@ fn ui(f: &mut Frame, app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use insta::{assert_snapshot, assert_debug_snapshot};
+    use insta::{assert_debug_snapshot, assert_snapshot};
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::{Terminal, backend::TestBackend};
 
@@ -745,9 +736,12 @@ mod tests {
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         let height = terminal.size().unwrap().height.saturating_sub(1);
-        let mut pending_g = false;
+        let mut ctx = commands::Context {
+            height,
+            pending_g: false,
+        };
         let key = KeyEvent::new(KeyCode::Char(':'), KeyModifiers::NONE);
-        keymaps::normal::handle(&mut app, key, height, &mut pending_g);
+        keymaps::normal::handle(&mut app, key, &mut ctx);
         terminal.draw(|f| ui(f, &app)).unwrap();
         assert_snapshot!("colon_enters_command_mode", terminal.backend());
     }
@@ -759,9 +753,12 @@ mod tests {
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         let height = terminal.size().unwrap().height.saturating_sub(1);
-        let mut pending_g = false;
+        let mut ctx = commands::Context {
+            height,
+            pending_g: false,
+        };
         let key = KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE);
-        keymaps::normal::handle(&mut app, key, height, &mut pending_g);
+        keymaps::normal::handle(&mut app, key, &mut ctx);
         terminal.draw(|f| ui(f, &app)).unwrap();
         assert_snapshot!("slash_enters_search_mode", terminal.backend());
     }
@@ -785,9 +782,12 @@ mod tests {
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         let height = terminal.size().unwrap().height.saturating_sub(1);
-        let mut cmd = "help".to_string();
+        let mut ctx = commands::Context {
+            height,
+            pending_g: false,
+        };
         let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
-        keymaps::command::handle(&mut app, &mut cmd, key, height);
+        keymaps::command::handle(&mut app, key, &mut ctx);
         terminal.draw(|f| ui(f, &app)).unwrap();
         assert_snapshot!("command_help_opens_help_screen", terminal.backend());
     }

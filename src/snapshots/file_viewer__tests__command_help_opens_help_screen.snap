@@ -1,9 +1,10 @@
 ---
 source: src/main.rs
+assertion_line: 792
 expression: terminal.backend()
 ---
 "File Viewer Help    "
 "                    "
-"?     Show this help"
-":help Open help     "
-"screen              "
+"Char('v') - Start   "
+"visual mode         "
+"Char('V') - Start   "
