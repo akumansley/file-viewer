@@ -667,4 +667,15 @@ mod tests {
         terminal.draw(|f| ui(f, &app)).unwrap();
         assert_snapshot!("after_ctrl_u", terminal.backend());
     }
+
+    #[test]
+    fn command_q_ui() {
+        let content = "hello\nworld".to_string();
+        let mut app = App::new(content);
+        app.mode = Mode::Command("q".into());
+        let backend = TestBackend::new(20, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| ui(f, &app)).unwrap();
+        assert_snapshot!("command_q_ui", terminal.backend());
+    }
 }

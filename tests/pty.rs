@@ -20,3 +20,22 @@ fn test_interactive_hello_world() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_interactive_command_q() -> anyhow::Result<()> {
+    let mut file = NamedTempFile::new()?;
+    writeln!(file, "hello world")?;
+
+    let mut p = spawn(
+        &format!("target/debug/file-viewer {}", file.path().display()),
+        Some(5_000),
+    )?;
+
+    // Wait for app to render
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    p.send(":q")?; // send colon followed by q
+    p.flush()?;
+    p.exp_eof()?;
+
+    Ok(())
+}
