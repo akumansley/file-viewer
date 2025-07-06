@@ -1,10 +1,24 @@
 ---
 source: src/main.rs
-assertion_line: 792
 expression: terminal.backend()
 ---
 "File Viewer Help    "
 "                    "
-"Char('v') - Start   "
-"visual mode         "
-"Char('V') - Start   "
+"Normal mode:        "
+"v - Start visual    "
+"mode                "
+"V - Start visual    "
+"line mode           "
+"g - gg goto first   "
+"line                "
+"? - Show this help  "
+"G - Goto last line  "
+"/ - Search          "
+"n - Next search hit "
+"N - Prev search hit "
+": - Command mode    "
+"q - Quit            "
+"h - Move left       "
+"j - Move down       "
+"k - Move up         "
+"l - Move right      "
