@@ -754,6 +754,7 @@ mod tests {
         terminal.draw(|f| ui(f, &app)).unwrap();
         assert_snapshot!("slash_enters_search_mode", terminal.backend());
     }
+    #[test]
     fn help_screen_renders() {
         let content = "hello".to_string();
         let mut app = App::new(content);
