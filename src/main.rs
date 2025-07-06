@@ -783,6 +783,8 @@ mod tests {
         terminal.draw(|f| ui(f, &app)).unwrap();
         assert_snapshot!("command_help_opens_help_screen", terminal.backend());
     }
+
+    #[test]
     fn help_screen_renders() {
         let content = "hello".to_string();
         let mut app = App::new(content);
