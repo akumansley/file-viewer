@@ -681,7 +681,7 @@ fn ui(f: &mut Frame, app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use insta::assert_snapshot;
+    use insta::{assert_snapshot, assert_debug_snapshot};
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::{Terminal, backend::TestBackend};
 
@@ -757,6 +757,33 @@ mod tests {
         terminal.draw(|f| ui(f, &app)).unwrap();
         assert_snapshot!("slash_enters_search_mode", terminal.backend());
     }
+
+    #[test]
+    fn search_highlighting() {
+        let content = "find me here\nand here".to_string();
+        let mut app = App::new(content);
+        app.set_search_query("here".into());
+        let backend = TestBackend::new(20, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| ui(f, &app)).unwrap();
+        assert_debug_snapshot!("search_highlighting", terminal.backend().buffer());
+    }
+
+    #[test]
+    fn command_help_opens_help_screen() {
+        let content = "hello".to_string();
+        let mut app = App::new(content);
+        app.mode = Mode::Command("help".into());
+        let backend = TestBackend::new(20, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let height = terminal.size().unwrap().height.saturating_sub(1);
+        let mut cmd = "help".to_string();
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        keymaps::command::handle(&mut app, &mut cmd, key, height);
+        terminal.draw(|f| ui(f, &app)).unwrap();
+        assert_snapshot!("command_help_opens_help_screen", terminal.backend());
+    }
+
     #[test]
     fn help_screen_renders() {
         let content = "hello".to_string();
