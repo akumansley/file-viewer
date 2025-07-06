@@ -1,0 +1,10 @@
+---
+source: src/main.rs
+assertion_line: 741
+expression: terminal.backend()
+---
+"hello               "
+"                    "
+"                    "
+"                    "
+":                   "

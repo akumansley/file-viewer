@@ -33,7 +33,7 @@ fn test_interactive_command_q() -> anyhow::Result<()> {
 
     // Wait for app to render
     std::thread::sleep(std::time::Duration::from_millis(200));
-    p.send(":q")?; // send colon followed by q
+    p.send(":q\r")?; // send colon, q, and Enter
     p.flush()?;
     p.exp_eof()?;
 
