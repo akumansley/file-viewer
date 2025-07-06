@@ -13,10 +13,13 @@ use ratatui::{
 };
 mod commands;
 mod keymaps;
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::{
     fs::File,
     io::{self, Read},
     path::PathBuf,
+    sync::mpsc,
+    time::Duration,
 };
 
 fn is_keyword(b: u8) -> bool {
@@ -119,6 +122,10 @@ impl Document {
         let lines = content.lines().map(|s| s.to_string()).collect();
         Self { lines }
     }
+
+    fn reload(&mut self, content: String) {
+        self.lines = content.lines().map(|s| s.to_string()).collect();
+    }
 }
 
 struct OverlayItem {
@@ -164,6 +171,7 @@ impl Document {
 }
 
 struct App {
+    path: PathBuf,
     doc: Document,
     overlays: Vec<OverlayItem>,
     cursor_x: usize,
@@ -177,8 +185,9 @@ struct App {
 }
 
 impl App {
-    fn new(content: String) -> Self {
+    fn new(path: PathBuf, content: String) -> Self {
         Self {
+            path,
             doc: Document::new(content),
             overlays: Vec::new(),
             cursor_x: 0,
@@ -542,7 +551,7 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let res = run_app(&mut terminal, content);
+    let res = run_app(&mut terminal, args.path.clone(), content);
 
     // restore terminal
     disable_raw_mode()?;
@@ -560,8 +569,23 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Result<()> {
-    let mut app = App::new(content);
+fn run_app<B: Backend>(
+    terminal: &mut Terminal<B>,
+    path: PathBuf,
+    content: String,
+) -> io::Result<()> {
+    let mut app = App::new(path, content);
+    let (tx, rx) = mpsc::channel();
+    let mut watcher: RecommendedWatcher = RecommendedWatcher::new(
+        move |res| {
+            let _ = tx.send(res);
+        },
+        notify::Config::default(),
+    )
+    .map_err(io::Error::other)?;
+    watcher
+        .watch(&app.path, RecursiveMode::NonRecursive)
+        .map_err(io::Error::other)?;
     let mut ctx = commands::Context {
         height: 0,
         pending_g: false,
@@ -569,33 +593,55 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, content: String) -> io::Resul
     loop {
         terminal.draw(|f| ui(f, &app))?;
 
-        if let Event::Key(key) = event::read()? {
-            ctx.height = terminal.size()?.height.saturating_sub(1);
+        // handle filesystem updates
+        while let Ok(Ok(event)) = rx.try_recv() {
+            if matches!(event.kind, EventKind::Modify(_)) {
+                let mut new_content = String::new();
+                File::open(&app.path)?.read_to_string(&mut new_content)?;
+                app.doc.reload(new_content);
+                app.cursor_y = app
+                    .cursor_y
+                    .min(app.display_lines().len().saturating_sub(1));
+                app.scroll = app
+                    .scroll
+                    .min(app.display_lines().len().saturating_sub(1) as u16);
+                let height = terminal.size()?.height.saturating_sub(1);
+                app.ensure_visible(height);
+                app.overlays.clear();
+                app.search_hits.clear();
+                app.current_hit = None;
+            }
+        }
 
-            let mode = app.mode.clone();
-            let quit = match mode {
-                Mode::Normal => {
-                    app.mode = Mode::Normal;
-                    keymaps::normal::handle(&mut app, key, &mut ctx)
-                }
-                Mode::Visual => {
-                    app.mode = Mode::Visual;
-                    keymaps::visual::handle(&mut app, key, &mut ctx)
-                }
-                Mode::VisualLine => {
-                    app.mode = Mode::VisualLine;
-                    keymaps::visual::handle(&mut app, key, &mut ctx)
-                }
-                Mode::Command(_) => keymaps::command::handle(&mut app, key, &mut ctx),
-                Mode::Search(_) => keymaps::search::handle(&mut app, key, &mut ctx),
-                Mode::Help => {
-                    app.mode = Mode::Help;
-                    keymaps::help::handle(&mut app, key, &mut ctx)
-                }
-            };
+        if event::poll(Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                ctx.height = terminal.size()?.height.saturating_sub(1);
 
-            if quit {
-                return Ok(());
+                let mode = app.mode.clone();
+                let quit = match mode {
+                    Mode::Normal => {
+                        app.mode = Mode::Normal;
+                        keymaps::normal::handle(&mut app, key, &mut ctx)
+                    }
+                    Mode::Visual => {
+                        app.mode = Mode::Visual;
+                        keymaps::visual::handle(&mut app, key, &mut ctx)
+                    }
+                    Mode::VisualLine => {
+                        app.mode = Mode::VisualLine;
+                        keymaps::visual::handle(&mut app, key, &mut ctx)
+                    }
+                    Mode::Command(_) => keymaps::command::handle(&mut app, key, &mut ctx),
+                    Mode::Search(_) => keymaps::search::handle(&mut app, key, &mut ctx),
+                    Mode::Help => {
+                        app.mode = Mode::Help;
+                        keymaps::help::handle(&mut app, key, &mut ctx)
+                    }
+                };
+
+                if quit {
+                    return Ok(());
+                }
             }
         }
     }
@@ -687,7 +733,7 @@ mod tests {
     #[test]
     fn initial_ui_snapshot() {
         let content = "hello\nworld".to_string();
-        let app = App::new(content);
+        let app = App::new(PathBuf::new(), content);
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| ui(f, &app)).unwrap();
@@ -698,7 +744,7 @@ mod tests {
     fn scrolling_ctrl_d_and_ctrl_u() {
         // Build content with many lines so we can scroll
         let content: String = (1..=20).map(|i| format!("line {i}\n")).collect();
-        let mut app = App::new(content);
+        let mut app = App::new(PathBuf::new(), content);
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         let height = terminal.size().unwrap().height.saturating_sub(1);
@@ -721,7 +767,7 @@ mod tests {
     #[test]
     fn command_q_ui() {
         let content = "hello\nworld".to_string();
-        let mut app = App::new(content);
+        let mut app = App::new(PathBuf::new(), content);
         app.mode = Mode::Command("q".into());
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -732,7 +778,7 @@ mod tests {
     #[test]
     fn colon_enters_command_mode() {
         let content = "hello".to_string();
-        let mut app = App::new(content);
+        let mut app = App::new(PathBuf::new(), content);
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         let height = terminal.size().unwrap().height.saturating_sub(1);
@@ -749,7 +795,7 @@ mod tests {
     #[test]
     fn slash_enters_search_mode() {
         let content = "hello".to_string();
-        let mut app = App::new(content);
+        let mut app = App::new(PathBuf::new(), content);
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         let height = terminal.size().unwrap().height.saturating_sub(1);
@@ -766,7 +812,7 @@ mod tests {
     #[test]
     fn search_highlighting() {
         let content = "find me here\nand here".to_string();
-        let mut app = App::new(content);
+        let mut app = App::new(PathBuf::new(), content);
         app.set_search_query("here".into());
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -777,7 +823,7 @@ mod tests {
     #[test]
     fn command_help_opens_help_screen() {
         let content = "hello".to_string();
-        let mut app = App::new(content);
+        let mut app = App::new(PathBuf::new(), content);
         app.mode = Mode::Command("help".into());
         let backend = TestBackend::new(20, 20);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -795,7 +841,7 @@ mod tests {
     #[test]
     fn help_screen_renders() {
         let content = "hello".to_string();
-        let mut app = App::new(content);
+        let mut app = App::new(PathBuf::new(), content);
         app.mode = Mode::Help;
         let backend = TestBackend::new(20, 20);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -806,7 +852,7 @@ mod tests {
     #[test]
     fn visual_mode_indicator() {
         let content = "hello".to_string();
-        let mut app = App::new(content);
+        let mut app = App::new(PathBuf::new(), content);
         app.mode = Mode::Visual;
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -817,11 +863,47 @@ mod tests {
     #[test]
     fn visual_line_mode_indicator() {
         let content = "hello".to_string();
-        let mut app = App::new(content);
+        let mut app = App::new(PathBuf::new(), content);
         app.mode = Mode::VisualLine;
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| ui(f, &app)).unwrap();
         assert_snapshot!("visual_line_mode_indicator", terminal.backend());
+    }
+
+    #[test]
+    fn reload_preserves_position() {
+        use std::io::{Read, Write};
+        use tempfile::NamedTempFile;
+
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "line1\nline2").unwrap();
+        let path = file.path().to_path_buf();
+        let mut content = String::new();
+        File::open(&path)
+            .unwrap()
+            .read_to_string(&mut content)
+            .unwrap();
+        let mut app = App::new(path.clone(), content);
+        app.cursor_y = 1;
+        app.scroll = 1;
+
+        std::fs::write(&path, "line1\nnew line\nline3").unwrap();
+        let mut new_content = String::new();
+        File::open(&path)
+            .unwrap()
+            .read_to_string(&mut new_content)
+            .unwrap();
+        app.doc.reload(new_content);
+        app.cursor_y = app
+            .cursor_y
+            .min(app.display_lines().len().saturating_sub(1));
+        app.scroll = app
+            .scroll
+            .min(app.display_lines().len().saturating_sub(1) as u16);
+        app.ensure_visible(5);
+
+        assert_eq!(app.cursor_y, 1);
+        assert!(app.scroll <= app.cursor_y as u16);
     }
 }
