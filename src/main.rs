@@ -17,6 +17,7 @@ mod keymaps;
 mod ptcr;
 use command_spec::CommandSpec;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::collections::HashMap;
 use std::{
     fs::File,
     io::{self, Read},
@@ -207,7 +208,7 @@ struct App {
     doc: Document,
     overlays: Vec<OverlayItem>,
     #[allow(dead_code)]
-    commands: Vec<CommandSpec>,
+    commands: std::collections::HashMap<String, CommandSpec>,
     cursor_x: usize,
     cursor_y: usize,
     scroll: u16,
@@ -220,11 +221,15 @@ struct App {
 
 impl App {
     fn new(path: PathBuf, content: String, commands: Vec<CommandSpec>) -> Self {
+        let mut map = HashMap::new();
+        for c in commands {
+            map.insert(c.name.clone(), c);
+        }
         Self {
             path,
             doc: Document::new(content),
             overlays: Vec::new(),
-            commands,
+            commands: map,
             cursor_x: 0,
             cursor_y: 0,
             scroll: 0,
