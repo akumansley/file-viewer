@@ -136,7 +136,43 @@ impl EditorCommand {
                 match cmd.as_str() {
                     "q" => return true,
                     "help" => app.mode = Mode::Help,
-                    _ => app.mode = Mode::Normal,
+                    _ => {
+                        let mut parts = cmd.splitn(2, char::is_whitespace);
+                        let name = parts.next().unwrap_or("");
+                        let args = parts.next().unwrap_or("");
+                        if let Some(spec) = app.commands.get(name) {
+                            let mut template = spec.template.clone();
+                            template = template.replace("{line}", &(app.cursor_y + 1).to_string());
+                            template = template.replace("{col}", &(app.cursor_x + 1).to_string());
+                            template = template.replace("{args}", args);
+                            let ((sy, sx), (ey, ex)) = match app.selection_start {
+                                Some(start) => {
+                                    let end = (app.cursor_y, app.cursor_x);
+                                    if start <= end {
+                                        (start, end)
+                                    } else {
+                                        (end, start)
+                                    }
+                                }
+                                None => {
+                                    let pos = (app.cursor_y, app.cursor_x);
+                                    (pos, pos)
+                                }
+                            };
+                            template = template.replace("{start_line}", &(sy + 1).to_string());
+                            template = template.replace("{start_col}", &(sx + 1).to_string());
+                            template = template.replace("{end_line}", &(ey + 1).to_string());
+                            template = template.replace("{end_col}", &(ex + 1).to_string());
+
+                            let parts: Vec<&str> = template.split_whitespace().collect();
+                            if let Some((prog, rest)) = parts.split_first() {
+                                let mut command = std::process::Command::new(prog);
+                                command.args(rest);
+                                let _ = command.status();
+                            }
+                        }
+                        app.mode = Mode::Normal;
+                    }
                 }
             }
             EditorCommand::CommandBackspace => {
