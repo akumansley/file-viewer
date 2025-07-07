@@ -13,11 +13,12 @@ use ratatui::{
 };
 mod commands;
 mod keymaps;
+mod ptcr;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::{
     fs::File,
     io::{self, Read},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::mpsc,
     time::Duration,
 };
@@ -131,6 +132,35 @@ impl Document {
 struct OverlayItem {
     after_line: usize,
     content: Vec<String>,
+}
+
+fn overlays_from_records(
+    records: &[ptcr::Record],
+    path: &Path,
+    lines_len: usize,
+) -> Vec<OverlayItem> {
+    let mut items = Vec::new();
+    for rec in records {
+        if rec.path != path {
+            continue;
+        }
+        let after = match rec.span {
+            ptcr::Span::File => lines_len,
+            ptcr::Span::Line(l) => l,
+            ptcr::Span::Point { line, .. } => line,
+            ptcr::Span::LineRange { end, .. } => end,
+            ptcr::Span::ColumnRange { line, .. } => line,
+            ptcr::Span::MultiLine { end_line, .. } => end_line,
+        };
+        let idx = if after > 0 { after - 1 } else { 0 };
+        let content = rec.body.iter().map(|l| format!("| {}", l)).collect();
+        items.push(OverlayItem {
+            after_line: idx,
+            content,
+        });
+    }
+    items.sort_by_key(|o| o.after_line);
+    items
 }
 
 enum DisplayLine<'a> {
@@ -574,7 +604,13 @@ fn run_app<B: Backend>(
     path: PathBuf,
     content: String,
 ) -> io::Result<()> {
-    let mut app = App::new(path, content);
+    let mut app = App::new(path.clone(), content);
+    let review_path = PathBuf::from(format!("{}.review", path.to_string_lossy()));
+    if review_path.exists() {
+        if let Ok(records) = ptcr::read_file(&review_path) {
+            app.overlays = overlays_from_records(&records, &path, app.doc.lines.len());
+        }
+    }
     let (tx, rx) = mpsc::channel();
     let mut watcher: RecommendedWatcher = RecommendedWatcher::new(
         move |res| {
@@ -905,5 +941,21 @@ mod tests {
 
         assert_eq!(app.cursor_y, 1);
         assert!(app.scroll <= app.cursor_y as u16);
+    }
+
+    #[test]
+    fn overlays_render_inline() {
+        let content = "line1\nline2".to_string();
+        let mut app = App::new(PathBuf::from("file.txt"), content);
+        let record = ptcr::Record {
+            path: PathBuf::from("file.txt"),
+            span: ptcr::Span::Line(1),
+            body: vec!["note".to_string()],
+        };
+        app.overlays = overlays_from_records(&[record], &app.path, app.doc.lines.len());
+        let backend = TestBackend::new(20, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| ui(f, &app)).unwrap();
+        assert_snapshot!("overlay_render_inline", terminal.backend());
     }
 }
