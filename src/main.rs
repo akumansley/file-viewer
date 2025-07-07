@@ -11,9 +11,11 @@ use ratatui::{
     prelude::*,
     widgets::{Paragraph, Wrap},
 };
+mod command_spec;
 mod commands;
 mod keymaps;
 mod ptcr;
+use command_spec::CommandSpec;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::{
     fs::File,
@@ -204,6 +206,8 @@ struct App {
     path: PathBuf,
     doc: Document,
     overlays: Vec<OverlayItem>,
+    #[allow(dead_code)]
+    commands: Vec<CommandSpec>,
     cursor_x: usize,
     cursor_y: usize,
     scroll: u16,
@@ -215,11 +219,12 @@ struct App {
 }
 
 impl App {
-    fn new(path: PathBuf, content: String) -> Self {
+    fn new(path: PathBuf, content: String, commands: Vec<CommandSpec>) -> Self {
         Self {
             path,
             doc: Document::new(content),
             overlays: Vec::new(),
+            commands,
             cursor_x: 0,
             cursor_y: 0,
             scroll: 0,
@@ -559,6 +564,10 @@ struct Cli {
     #[arg(long)]
     headless: bool,
 
+    /// Custom command definitions in the form <name>:<template>
+    #[arg(long = "command", action = clap::ArgAction::Append)]
+    commands: Vec<CommandSpec>,
+
     /// Path to the file to view
     path: PathBuf,
 }
@@ -581,7 +590,7 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let res = run_app(&mut terminal, args.path.clone(), content);
+    let res = run_app(&mut terminal, args.path.clone(), content, args.commands);
 
     // restore terminal
     disable_raw_mode()?;
@@ -603,8 +612,9 @@ fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     path: PathBuf,
     content: String,
+    commands: Vec<CommandSpec>,
 ) -> io::Result<()> {
-    let mut app = App::new(path.clone(), content);
+    let mut app = App::new(path.clone(), content, commands);
     let review_path = PathBuf::from(format!("{}.review", path.to_string_lossy()));
     if review_path.exists() {
         if let Ok(records) = ptcr::read_file(&review_path) {
@@ -769,7 +779,7 @@ mod tests {
     #[test]
     fn initial_ui_snapshot() {
         let content = "hello\nworld".to_string();
-        let app = App::new(PathBuf::new(), content);
+        let app = App::new(PathBuf::new(), content, Vec::new());
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| ui(f, &app)).unwrap();
@@ -780,7 +790,7 @@ mod tests {
     fn scrolling_ctrl_d_and_ctrl_u() {
         // Build content with many lines so we can scroll
         let content: String = (1..=20).map(|i| format!("line {i}\n")).collect();
-        let mut app = App::new(PathBuf::new(), content);
+        let mut app = App::new(PathBuf::new(), content, Vec::new());
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         let height = terminal.size().unwrap().height.saturating_sub(1);
@@ -803,7 +813,7 @@ mod tests {
     #[test]
     fn command_q_ui() {
         let content = "hello\nworld".to_string();
-        let mut app = App::new(PathBuf::new(), content);
+        let mut app = App::new(PathBuf::new(), content, Vec::new());
         app.mode = Mode::Command("q".into());
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -814,7 +824,7 @@ mod tests {
     #[test]
     fn colon_enters_command_mode() {
         let content = "hello".to_string();
-        let mut app = App::new(PathBuf::new(), content);
+        let mut app = App::new(PathBuf::new(), content, Vec::new());
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         let height = terminal.size().unwrap().height.saturating_sub(1);
@@ -831,7 +841,7 @@ mod tests {
     #[test]
     fn slash_enters_search_mode() {
         let content = "hello".to_string();
-        let mut app = App::new(PathBuf::new(), content);
+        let mut app = App::new(PathBuf::new(), content, Vec::new());
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
         let height = terminal.size().unwrap().height.saturating_sub(1);
@@ -848,7 +858,7 @@ mod tests {
     #[test]
     fn search_highlighting() {
         let content = "find me here\nand here".to_string();
-        let mut app = App::new(PathBuf::new(), content);
+        let mut app = App::new(PathBuf::new(), content, Vec::new());
         app.set_search_query("here".into());
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -859,7 +869,7 @@ mod tests {
     #[test]
     fn command_help_opens_help_screen() {
         let content = "hello".to_string();
-        let mut app = App::new(PathBuf::new(), content);
+        let mut app = App::new(PathBuf::new(), content, Vec::new());
         app.mode = Mode::Command("help".into());
         let backend = TestBackend::new(20, 20);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -877,7 +887,7 @@ mod tests {
     #[test]
     fn help_screen_renders() {
         let content = "hello".to_string();
-        let mut app = App::new(PathBuf::new(), content);
+        let mut app = App::new(PathBuf::new(), content, Vec::new());
         app.mode = Mode::Help;
         let backend = TestBackend::new(20, 20);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -888,7 +898,7 @@ mod tests {
     #[test]
     fn visual_mode_indicator() {
         let content = "hello".to_string();
-        let mut app = App::new(PathBuf::new(), content);
+        let mut app = App::new(PathBuf::new(), content, Vec::new());
         app.mode = Mode::Visual;
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -899,7 +909,7 @@ mod tests {
     #[test]
     fn visual_line_mode_indicator() {
         let content = "hello".to_string();
-        let mut app = App::new(PathBuf::new(), content);
+        let mut app = App::new(PathBuf::new(), content, Vec::new());
         app.mode = Mode::VisualLine;
         let backend = TestBackend::new(20, 5);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -920,7 +930,7 @@ mod tests {
             .unwrap()
             .read_to_string(&mut content)
             .unwrap();
-        let mut app = App::new(path.clone(), content);
+        let mut app = App::new(path.clone(), content, Vec::new());
         app.cursor_y = 1;
         app.scroll = 1;
 
@@ -946,7 +956,7 @@ mod tests {
     #[test]
     fn overlays_render_inline() {
         let content = "line1\nline2".to_string();
-        let mut app = App::new(PathBuf::from("file.txt"), content);
+        let mut app = App::new(PathBuf::from("file.txt"), content, Vec::new());
         let record = ptcr::Record {
             path: PathBuf::from("file.txt"),
             span: ptcr::Span::Line(1),
