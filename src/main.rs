@@ -701,7 +701,8 @@ fn run_app<B: Backend>(
 fn ui(f: &mut Frame, app: &App) {
     let area = f.area();
     if matches!(app.mode, Mode::Help) {
-        let text = commands::help_lines().join("\n");
+        let cmds: Vec<CommandSpec> = app.commands.values().cloned().collect();
+        let text = commands::help_lines(&cmds).join("\n");
         let paragraph = Paragraph::new(text).wrap(Wrap { trim: true });
         f.render_widget(paragraph, area);
         return;
