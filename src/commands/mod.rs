@@ -1,5 +1,6 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::command_spec::CommandSpec;
 use crate::{App, Mode};
 
 #[derive(Clone, Copy)]
@@ -514,7 +515,7 @@ fn format_key(key: KeyEvent) -> String {
     parts.join("-")
 }
 
-pub fn help_lines() -> Vec<String> {
+pub fn help_lines(commands: &[CommandSpec]) -> Vec<String> {
     let mut lines = vec!["File Viewer Help".to_string(), String::new()];
 
     lines.push("Normal mode:".to_string());
@@ -544,6 +545,14 @@ pub fn help_lines() -> Vec<String> {
     lines.push("Help screen:".to_string());
     for binding in HELP_BINDINGS {
         lines.push(format!("{} - {}", format_key(binding.key), binding.help));
+    }
+
+    if !commands.is_empty() {
+        lines.push(String::new());
+        lines.push("Custom commands:".to_string());
+        for cmd in commands {
+            lines.push(format!(":{} - {}", cmd.name, cmd.template));
+        }
     }
 
     lines
