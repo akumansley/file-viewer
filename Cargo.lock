@@ -298,7 +298,9 @@ dependencies = [
  "clap",
  "insta",
  "notify",
+ "once_cell",
  "ratatui",
+ "regex",
  "rexpect",
  "tempfile",
 ]
